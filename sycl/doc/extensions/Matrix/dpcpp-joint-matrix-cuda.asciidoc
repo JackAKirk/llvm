@@ -203,7 +203,7 @@ This section summarizes the specific features that this implementation supports.
 
 More specifically, the following operation C = A*B+C can be performed on AMX with this interface where:
 
-A(double, 8x4, row_major/col_major), B(double, 4x8, row_major/col_major), C(int32, 8x8, row_major/col_major)
+A(double, 8x4, row_major/col_major), B(double, 4x8, row_major/col_major), C(double, 8x8, row_major/col_major)
 
 No other types or layouts are supported at this time.
 
@@ -223,10 +223,10 @@ exposed libclc function by creating an LLVM IR helper file.
 ## TODO List
 
 - Add a test for a case using USM.
-- Add remaining shapes data types for WMMA instructions.
+- Add remaining shapes/data types for WMMA instructions.
 - Implement MMA instructions for the packed layout case.
 - Add runtime implementation for the packed layout case.
-- Work out a common interface with AMX (and archs).
+- Work out a common interface with AMX (and other archs).
 
 ## Revision History
 
