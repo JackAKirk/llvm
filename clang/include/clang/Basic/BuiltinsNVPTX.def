@@ -264,8 +264,8 @@ BUILTIN(__nvvm_fabs_d, "dd", "")
 
 // Neg
 
-TARGET_BUILTIN(__nvvm_neg_bf16, "ZUsZUs", "", AND(SM_80,PTX70))
-TARGET_BUILTIN(__nvvm_neg_bf16x2, "ZUiZUi", "", AND(SM_80,PTX70))
+//TARGET_BUILTIN(__nvvm_neg_bf16, "ZUsZUs", "", AND(SM_80,PTX70))
+//TARGET_BUILTIN(__nvvm_neg_bf16x2, "ZUiZUi", "", AND(SM_80,PTX70))
 
 // Round
 
