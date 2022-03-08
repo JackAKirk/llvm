@@ -20,7 +20,7 @@
 
 int __clc_nvvm_reflect_arch();
 
-_CLC_DEF _CLC_OVERLOAD half __spirv_ocl_native_exp2(half x) {
+_CLC_DEF _CLC_OVERLOAD half __clc_native_exp2(half x) {
   if (__clc_nvvm_reflect_arch() >= 750) {
     return __nvvm_ex2_approx_f16(x);
   } else {
@@ -29,7 +29,7 @@ _CLC_DEF _CLC_OVERLOAD half __spirv_ocl_native_exp2(half x) {
   }
 }
 
-_CLC_DEF _CLC_OVERLOAD half2 __spirv_ocl_native_exp2(half2 x) {
+_CLC_DEF _CLC_OVERLOAD half2 __clc_native_exp2(half2 x) {
   if (__clc_nvvm_reflect_arch() >= 750) {
     return __nvvm_ex2_approx_f16x2(x);
   } else {
@@ -43,7 +43,7 @@ _CLC_DEF _CLC_OVERLOAD half2 __spirv_ocl_native_exp2(half2 x) {
 }
 
 _CLC_UNARY_VECTORIZE_HAVE2(_CLC_OVERLOAD _CLC_DEF, half,
-                           __spirv_ocl_native_exp2, half)
+                           __clc_native_exp2, half)
 
 #endif // cl_khr_fp16
 
