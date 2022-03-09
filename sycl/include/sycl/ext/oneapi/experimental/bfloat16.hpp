@@ -14,10 +14,10 @@
 __SYCL_INLINE_NAMESPACE(cl) {
 namespace sycl {
 namespace ext {
-namespace intel {
+namespace oneapi {
 namespace experimental {
 
-class [[sycl_detail::uses_aspects(ext_intel_bf16_conversion)]] bfloat16 {
+class [[sycl_detail::uses_aspects(ext_oneapi_bfloat16)]] bfloat16 {
   using storage_t = uint16_t;
   storage_t value;
 
@@ -143,7 +143,7 @@ public:
 };
 
 } // namespace experimental
-} // namespace intel
+} // namespace oneapi
 } // namespace ext
 
 } // namespace sycl
