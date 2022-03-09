@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 = sycl_oneapi_bf16_conversion
+=======
+= SYCL_ONEAPI_bfloat16
+>>>>>>> aidan-llvm/aspect_bf16
 
 :source-highlighter: coderay
 :coderay-linenums-mode: table
@@ -24,7 +28,11 @@
 
 IMPORTANT: This specification is a draft.
 
+<<<<<<< HEAD
 Copyright (c) 2021-2022 Intel Corporation. All rights reserved.
+=======
+Copyright (c) 2021 Intel Corporation. All rights reserved.
+>>>>>>> aidan-llvm/aspect_bf16
 
 NOTE: Khronos(R) is a registered trademark and SYCL(TM) and SPIR(TM) are
 trademarks of The Khronos Group Inc.  OpenCL(TM) is a trademark of Apple Inc.
@@ -32,7 +40,11 @@ used by permission by Khronos.
 
 == Dependencies
 
+<<<<<<< HEAD
 This extension is written against the SYCL 2020 specification, Revision 4.
+=======
+This extension is written against the SYCL 2020 specification, Revision 3.
+>>>>>>> aidan-llvm/aspect_bf16
 
 == Status
 
@@ -48,7 +60,11 @@ products.
 
 == Version
 
+<<<<<<< HEAD
 Revision: 4
+=======
+Revision: 3
+>>>>>>> aidan-llvm/aspect_bf16
 
 == Introduction
 
@@ -73,7 +89,11 @@ command (e.g. from `parallel_for`).
 This extension provides a feature-test macro as described in the core SYCL
 specification section 6.3.3 "Feature test macros". Therefore, an implementation
 supporting this extension must predefine the macro
+<<<<<<< HEAD
 `SYCL_EXT_ONEAPI_BF16_CONVERSION` to one of the values defined in the table
+=======
+`SYCL_EXT_ONEAPI_BFLOAT16_CONVERSION` to one of the values defined in the table
+>>>>>>> aidan-llvm/aspect_bf16
 below. Applications can test for the existence of this macro to determine if
 the implementation supports this feature, or applications can test the macro’s
  value to determine which of the extension’s APIs the implementation supports.
@@ -91,19 +111,32 @@ the implementation supports this feature, or applications can test the macro’s
 namespace sycl {
 enum class aspect {
   ...
+<<<<<<< HEAD
   ext_oneapi_bf16_conversion
+=======
+  ext_oneapi_bfloat16
+>>>>>>> aidan-llvm/aspect_bf16
 }
 }
 ----
 
+<<<<<<< HEAD
 If a SYCL device has the `ext_oneapi_bf16_conversion` aspect, then it natively
+=======
+If a SYCL device has the `ext_oneapi_bfloat16` aspect, then it natively
+>>>>>>> aidan-llvm/aspect_bf16
 supports conversion of values of `float` type to `bfloat16` and back.
 
 If the device doesn't have the aspect, objects of `bfloat16` class must not be
 used in the device code.
 
+<<<<<<< HEAD
 **NOTE**: The `ext_oneapi_bf16_conversion` aspect is not yet supported.  The
 `bfloat16` class is currently supported only on Xe HP GPU and Nvidia A100 GPU.
+=======
+**NOTE**: The `ext_oneapi_bfloat16` aspect is not yet supported.  The
+`bfloat16` class is currently supported only on Xe HP GPU.
+>>>>>>> aidan-llvm/aspect_bf16
 
 == New `bfloat16` class
 
@@ -304,7 +337,11 @@ int main (int argc, char *argv[]) {
   sycl::queue deviceQueue{dev};
   sycl::buffer<float, 1> buf {data, sycl::range<1> {3}};
 
+<<<<<<< HEAD
   if (dev.has(sycl::aspect::ext_oneapi_bf16_conversion)) {
+=======
+  if (dev.has(sycl::aspect::ext_oneapi_bfloat16)) {
+>>>>>>> aidan-llvm/aspect_bf16
     deviceQueue.submit ([&] (sycl::handler& cgh) {
       auto numbers = buf.get_access<sycl::access::mode::read_write> (cgh);
       cgh.single_task<class simple_kernel> ([=] () {
@@ -332,5 +369,8 @@ None.
                              Add operator overloadings +
                              Apply code review suggestions
 |3|2021-08-18|Alexey Sotkin |Remove `uint16_t` constructor
+<<<<<<< HEAD
 |4|2022-03-07|Jack Kirk |Switch from Intel vendor specific to oneapi
+=======
+>>>>>>> aidan-llvm/aspect_bf16
 |========================================
