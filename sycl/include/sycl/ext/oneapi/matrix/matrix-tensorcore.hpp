@@ -150,10 +150,6 @@ __SYCL_JOINT_MATRIX_OVERLOAD(uint16_t, b, 16, 8, int32_t, 2)
 __SYCL_JOINT_MATRIX_OVERLOAD(uint16_t, a, 16, 16, int32_t, 4)
 __SYCL_JOINT_MATRIX_OVERLOAD(uint16_t, b, 16, 16, int32_t, 4)
 
-// m16n16k8 tf32
-__SYCL_JOINT_MATRIX_OVERLOAD(precision::tf32, a, 16, 8, float, 4)
-__SYCL_JOINT_MATRIX_OVERLOAD(precision::tf32, b, 8, 16, float, 4)
-
 #undef __SYCL_JOINT_MATRIX_OVERLOAD
 
 template <typename Group, typename T, matrix_use Use, size_t NumRows,
@@ -753,21 +749,6 @@ joint_matrix_mad(
   throw runtime_error("When using SYCL_EXT_ONEAPI_MATRIX=3 joint_matrix_mad is "
                       "only supported by CUDA devices",
                       PI_ERROR_INVALID_DEVICE);
-#endif // defined(__SYCL_DEVICE_ONLY__) && defined(__NVPTX__)
-}
-
-// This function rounds the bottom 13 bits up or down, and then zeros out the
-// bottom bits
-float round_to_tf32(float a) {
-#if defined(__SYCL_DEVICE_ONLY__) && defined(__NVPTX__)
-  int32_t tmp_int = __nvvm_f2tf32_rna(a);
-  return __nvvm_bitcast_i2f(tmp_int);
-#else
-  uint32_t tmp_uint = reinterpret_cast<uint32_t &>(a);
-  tmp_uint += 0x1000u;
-  tmp_uint &= 0xFFFFE000u;
-  float ret = reinterpret_cast<float &>(tmp_uint);
-  return ret;
 #endif // defined(__SYCL_DEVICE_ONLY__) && defined(__NVPTX__)
 }
 
