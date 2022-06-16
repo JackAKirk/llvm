@@ -419,6 +419,7 @@ struct _pi_queue {
 
   // get_next_compute/transfer_stream() functions return streams from
   // appropriate pools in round-robin fashion
+  native_type get_transfer_stream(int i);
   native_type get_next_compute_stream();
   native_type get_next_transfer_stream();
   native_type get() { return get_next_compute_stream(); };

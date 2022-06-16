@@ -381,6 +381,10 @@ CUstream _pi_queue::get_next_compute_stream() {
   return compute_streams_[compute_stream_idx_++ % compute_streams_.size()];
 }
 
+CUstream _pi_queue::get_transfer_stream(int i) {
+  return transfer_streams_[i];
+}
+
 CUstream _pi_queue::get_next_transfer_stream() {
   if (transfer_streams_.empty()) { // for example in in-order queue
     return get_next_compute_stream();
@@ -2464,7 +2468,8 @@ pi_result cuda_piEnqueueMemBufferWrite(pi_queue command_queue, pi_mem buffer,
 
   try {
     ScopedContext active(command_queue->get_context());
-    CUstream cuStream = command_queue->get_next_transfer_stream();
+    //CUstream cuStream = command_queue->get_next_transfer_stream();
+    CUstream cuStream = command_queue->get_transfer_stream(0);
 
     retErr = enqueueEventsWait(command_queue, cuStream, num_events_in_wait_list,
                                event_wait_list);
@@ -2510,7 +2515,8 @@ pi_result cuda_piEnqueueMemBufferRead(pi_queue command_queue, pi_mem buffer,
 
   try {
     ScopedContext active(command_queue->get_context());
-    CUstream cuStream = command_queue->get_next_transfer_stream();
+    //CUstream cuStream = command_queue->get_next_transfer_stream();
+    CUstream cuStream = command_queue->get_transfer_stream(1);
 
     retErr = enqueueEventsWait(command_queue, cuStream, num_events_in_wait_list,
                                event_wait_list);
