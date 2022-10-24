@@ -20,6 +20,22 @@
 namespace sycl {
 __SYCL_INLINE_VER_NAMESPACE(_V1) {
 
+namespace ext {
+namespace oneapi {
+namespace experimental {
+
+bool __SYCL_EXPORT ext_oneapi_enable_peer_access(const queue &active, const queue &peer) {
+  const RT::PiQueue Queue = active.impl->getHandleRef();
+  const detail::plugin &Plugin = active.impl->getPlugin();
+  const RT::PiQueue PeerPi = peer.impl->getHandleRef();
+  Plugin.call<detail::PiApiKind::piextEnablePeer>(Queue, PeerPi );
+  return true;
+}
+
+} // namespace experimental
+} // namespace oneapi
+} // namespace ext
+
 queue::queue(const context &SyclContext, const device_selector &DeviceSelector,
              const async_handler &AsyncHandler, const property_list &PropList) {
 

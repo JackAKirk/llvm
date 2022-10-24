@@ -62,6 +62,15 @@ class queue;
 template <backend BackendName, class SyclObjectT>
 auto get_native(const SyclObjectT &Obj)
     -> backend_return_t<BackendName, SyclObjectT>;
+namespace ext {
+namespace oneapi {
+namespace experimental {
+
+bool __SYCL_EXPORT ext_oneapi_enable_peer_access(const queue &active, const queue &peer);
+
+} // namespace experimental
+} // namespace oneapi
+} // namespace ext
 
 namespace detail {
 class queue_impl;
@@ -85,6 +94,9 @@ static event submitAssertCapture(queue &, event &, queue *,
 /// \ingroup sycl_api
 class __SYCL_EXPORT queue {
 public:
+
+friend bool ext::oneapi::experimental::ext_oneapi_enable_peer_access(const queue &active, const queue &peer);
+
   /// Constructs a SYCL queue instance using the device returned by an instance
   /// of default_selector.
   ///

@@ -8489,6 +8489,13 @@ pi_result piextUSMEnqueueMemAdvise(pi_queue Queue, const void *Ptr,
   return PI_SUCCESS;
 }
 
+pi_result piextEnablePeer(pi_queue command_queue, pi_queue peer_queue){
+
+ pi_result result = PI_SUCCESS;
+
+return result;
+}
+
 /// API to query information about USM allocated pointers.
 /// Valid Queries:
 ///   PI_MEM_ALLOC_TYPE returns host/device/shared pi_usm_type value

@@ -5258,6 +5258,19 @@ pi_result cuda_piextUSMEnqueueMemAdvise(pi_queue queue, const void *ptr,
   return result;
 }
 
+pi_result cuda_piextEnablePeer(pi_queue command_queue, pi_queue peer_queue){
+
+ pi_result result = PI_SUCCESS;
+try {
+    ScopedContext active(command_queue->get_context());
+result = PI_CHECK_ERROR(cuCtxEnablePeerAccess(peer_queue->get_context()->get(), 0));
+    
+  } catch (pi_result err) {
+    result = err;
+  }
+return result;
+}
+
 /// API to query information about USM allocated pointers
 /// Valid Queries:
 ///   PI_MEM_ALLOC_TYPE returns host/device/shared pi_host_usm value
@@ -5524,6 +5537,7 @@ pi_result piPluginInit(pi_plugin *PluginInit) {
   _PI_CL(piextKernelSetArgSampler, cuda_piextKernelSetArgSampler)
   _PI_CL(piPluginGetLastError, cuda_piPluginGetLastError)
   _PI_CL(piTearDown, cuda_piTearDown)
+  _PI_CL(piextEnablePeer, cuda_piextEnablePeer)
 
 #undef _PI_CL
 
