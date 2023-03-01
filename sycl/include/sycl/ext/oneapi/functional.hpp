@@ -67,6 +67,26 @@ struct GroupOpTag<T, detail::enable_if_t<detail::is_sgenfloat<T>::value>> {
     return Ret;                                                                \
   }
 
+  #define __SYCL_CALC_OVERLOAD_MASKED(GroupTag, SPIRVOperation, BinaryOperation) \
+  template <typename T, __spv::GroupOperation O, __spv::Scope::Flag S>         \
+  static T calc(GroupTag, T x, BinaryOperation, uint32_t mask_bits) {          \
+    using ConvertedT = detail::ConvertToOpenCLType_t<T>;                       \
+                                                                               \
+    using OCLT =                                                               \
+        conditional_t<std::is_same<ConvertedT, cl_char>() ||                   \
+                          std::is_same<ConvertedT, cl_short>(),                \
+                      cl_int,                                                  \
+                      conditional_t<std::is_same<ConvertedT, cl_uchar>() ||    \
+                                        std::is_same<ConvertedT, cl_ushort>(), \
+                                    cl_uint, ConvertedT>>;                     \
+    OCLT Arg = x;                                                              \
+    OCLT Ret = __spirv_Group##SPIRVOperation##Masked(                          \
+        S, static_cast<unsigned int>(O), Arg, mask_bits);                      \
+    return Ret;                                                                \
+  }
+
+
+
 // calc for sycl function objects
 __SYCL_CALC_OVERLOAD(GroupOpISigned, SMin, sycl::minimum<T>)
 __SYCL_CALC_OVERLOAD(GroupOpIUnsigned, UMin, sycl::minimum<T>)
@@ -91,12 +111,44 @@ __SYCL_CALC_OVERLOAD(GroupOpIUnsigned, BitwiseXorKHR, sycl::bit_xor<T>)
 __SYCL_CALC_OVERLOAD(GroupOpISigned, BitwiseAndKHR, sycl::bit_and<T>)
 __SYCL_CALC_OVERLOAD(GroupOpIUnsigned, BitwiseAndKHR, sycl::bit_and<T>)
 
+
+
+__SYCL_CALC_OVERLOAD_MASKED(GroupOpISigned, SMin, sycl::minimum<T>)
+__SYCL_CALC_OVERLOAD_MASKED(GroupOpIUnsigned, UMin, sycl::minimum<T>)
+
+__SYCL_CALC_OVERLOAD_MASKED(GroupOpISigned, SMax, sycl::maximum<T>)
+__SYCL_CALC_OVERLOAD_MASKED(GroupOpIUnsigned, UMax, sycl::maximum<T>)
+
+__SYCL_CALC_OVERLOAD_MASKED(GroupOpISigned, IAdd, sycl::plus<T>)
+__SYCL_CALC_OVERLOAD_MASKED(GroupOpIUnsigned, IAdd, sycl::plus<T>)
+
+__SYCL_CALC_OVERLOAD_MASKED(GroupOpISigned, NonUniformBitwiseOr,
+                            sycl::bit_or<T>)
+__SYCL_CALC_OVERLOAD_MASKED(GroupOpIUnsigned, NonUniformBitwiseOr,
+                            sycl::bit_or<T>)
+__SYCL_CALC_OVERLOAD_MASKED(GroupOpISigned, NonUniformBitwiseXor,
+                            sycl::bit_xor<T>)
+__SYCL_CALC_OVERLOAD_MASKED(GroupOpIUnsigned, NonUniformBitwiseXor,
+                            sycl::bit_xor<T>)
+__SYCL_CALC_OVERLOAD_MASKED(GroupOpISigned, NonUniformBitwiseAnd,
+                            sycl::bit_and<T>)
+__SYCL_CALC_OVERLOAD_MASKED(GroupOpIUnsigned, NonUniformBitwiseAnd,
+                            sycl::bit_and<T>)
+
 #undef __SYCL_CALC_OVERLOAD
+#undef __SYCL_CALC_OVERLOAD_MASKED
 
 template <typename T, __spv::GroupOperation O, __spv::Scope::Flag S,
           template <typename> class BinaryOperation>
 static T calc(typename GroupOpTag<T>::type, T x, BinaryOperation<void>) {
   return calc<T, O, S>(typename GroupOpTag<T>::type(), x, BinaryOperation<T>());
+}
+template <typename T, __spv::GroupOperation O, __spv::Scope::Flag S,
+          template <typename> class BinaryOperation>
+static T calc(typename GroupOpTag<T>::type, T x, BinaryOperation<void>,
+              uint32_t mask_bits) {
+  return calc<T, O, S>(typename GroupOpTag<T>::type(), x, BinaryOperation<T>(),
+                       mask_bits);
 }
 
 } // namespace detail

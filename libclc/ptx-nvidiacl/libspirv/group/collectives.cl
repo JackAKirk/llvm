@@ -281,6 +281,67 @@ __CLC_SUBGROUP_COLLECTIVE(BitwiseXorKHR, __CLC_XOR, long, 0l)
 #undef __CLC_SUBGROUP_COLLECTIVE
 #undef __CLC_SUBGROUP_COLLECTIVE_REDUX
 
+#define __CLC_SUBGROUP_COLLECTIVE_REDUX_MASKED(NAME, OP, REDUX_OP, TYPE,       \
+                                               IDENTITY)                       \
+  _CLC_DEF _CLC_OVERLOAD _CLC_CONVERGENT TYPE __CLC_APPEND(                    \
+      __clc__Subgroup, NAME##Masked)(uint op, TYPE x, TYPE * carry,            \
+                                     unsigned int Mask) {                      \
+    if (__clc_nvvm_reflect_arch() < 800 || op != Reduce) {                 \
+return *carry;                                                           \
+    }                                                                          \
+    if (__nvvm_read_ptx_sreg_lanemask_eq() & Mask) {                           \
+      TYPE result = __nvvm_redux_sync_##REDUX_OP(x, Mask);                     \
+      *carry = result;                                                         \
+      return result;                                                           \
+    } else {                                                                   \
+      return *carry;                                                           \
+    }                                                                          \
+  }
+
+__CLC_SUBGROUP_COLLECTIVE_REDUX_MASKED(IAdd, __CLC_ADD, add, int, 0)
+__CLC_SUBGROUP_COLLECTIVE_REDUX_MASKED(IAdd, __CLC_ADD, add, uint, 0)
+__CLC_SUBGROUP_COLLECTIVE_REDUX_MASKED(SMin, __CLC_MIN, min, int, INT_MAX)
+__CLC_SUBGROUP_COLLECTIVE_REDUX_MASKED(UMin, __CLC_MIN, umin, uint, UINT_MAX)
+__CLC_SUBGROUP_COLLECTIVE_REDUX_MASKED(SMax, __CLC_MAX, max, int, INT_MIN)
+__CLC_SUBGROUP_COLLECTIVE_REDUX_MASKED(UMax, __CLC_MAX, umax, uint, 0)
+__CLC_SUBGROUP_COLLECTIVE_REDUX_MASKED(NonUniformBitwiseAnd, __CLC_AND, and, uint, ~0)
+__CLC_SUBGROUP_COLLECTIVE_REDUX_MASKED(NonUniformBitwiseOr, __CLC_OR, or, uint, 0)
+__CLC_SUBGROUP_COLLECTIVE_REDUX_MASKED(NonUniformBitwiseXor, __CLC_XOR, xor, uint, 0)
+__CLC_SUBGROUP_COLLECTIVE_REDUX_MASKED(NonUniformBitwiseAnd, __CLC_AND, and, int, ~0)
+__CLC_SUBGROUP_COLLECTIVE_REDUX_MASKED(NonUniformBitwiseOr, __CLC_OR, or, int, 0)
+__CLC_SUBGROUP_COLLECTIVE_REDUX_MASKED(NonUniformBitwiseXor, __CLC_XOR, xor, int, 0)
+
+#define __CLC_GROUP_COLLECTIVE_MASKED(SPIRV_NAME, OP, TYPE, IDENTITY)          \
+  _CLC_DEF _CLC_OVERLOAD _CLC_CONVERGENT TYPE __CLC_APPEND(                    \
+      __spirv_Group, SPIRV_NAME##Masked)(uint scope, uint op, TYPE x,          \
+                                         unsigned int Mask) {                  \
+    if (scope != Subgroup) {                                                   \
+        __builtin_trap();                                                      \
+        __builtin_unreachable();                                               \
+    }                                                                          \
+    TYPE carry = IDENTITY;                                                     \
+    /* Perform GroupOperation within sub-group */                              \
+    TYPE sg_x = __CLC_APPEND(__clc__Subgroup,                                  \
+                             SPIRV_NAME##Masked)(op, x, &carry, Mask);         \
+    return sg_x;                                                               \
+  }
+
+__CLC_GROUP_COLLECTIVE_MASKED(IAdd, __CLC_ADD, int, 0)
+__CLC_GROUP_COLLECTIVE_MASKED(IAdd, __CLC_ADD, uint, 0)
+__CLC_GROUP_COLLECTIVE_MASKED(SMin, __CLC_MIN, int, INT_MAX)
+__CLC_GROUP_COLLECTIVE_MASKED(UMin, __CLC_MIN, uint, UINT_MAX)
+__CLC_GROUP_COLLECTIVE_MASKED(SMax, __CLC_MAX, int, INT_MIN)
+__CLC_GROUP_COLLECTIVE_MASKED(UMax, __CLC_MAX, uint, 0)
+__CLC_GROUP_COLLECTIVE_MASKED(NonUniformBitwiseAnd, __CLC_AND, uint, ~0)
+__CLC_GROUP_COLLECTIVE_MASKED(NonUniformBitwiseOr, __CLC_OR, uint, 0)
+__CLC_GROUP_COLLECTIVE_MASKED(NonUniformBitwiseXor, __CLC_XOR, uint, 0)
+__CLC_GROUP_COLLECTIVE_MASKED(NonUniformBitwiseAnd, __CLC_AND, int, ~0)
+__CLC_GROUP_COLLECTIVE_MASKED(NonUniformBitwiseOr, __CLC_OR, int, 0)
+__CLC_GROUP_COLLECTIVE_MASKED(NonUniformBitwiseXor, __CLC_XOR, int, 0)
+
+#undef __CLC_SUBGROUP_COLLECTIVE_REDUX_MASKED
+#undef __CLC_GROUP_COLLECTIVE_MASK
+
 #define __CLC_GROUP_COLLECTIVE_INNER(SPIRV_NAME, CLC_NAME, OP, TYPE, IDENTITY) \
   _CLC_DEF _CLC_OVERLOAD _CLC_CONVERGENT TYPE __CLC_APPEND(                    \
       __spirv_Group, SPIRV_NAME)(uint scope, uint op, TYPE x) {                \

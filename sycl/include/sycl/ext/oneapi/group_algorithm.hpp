@@ -18,6 +18,8 @@
 #include <sycl/group.hpp>
 #include <sycl/group_algorithm.hpp>
 #include <sycl/nd_item.hpp>
+#include <sycl/ext/oneapi/sub_group_mask.hpp>
+#include <sycl/ext/oneapi/experimental/cluster_group.hpp>
 
 namespace sycl {
 __SYCL_INLINE_VER_NAMESPACE(_V1) {
@@ -341,6 +343,57 @@ detail::enable_if_t<(detail::is_sub_group<Group>::value &&
     }
   }
   return g.shuffle(op(init, result), 0);
+}
+
+template <typename T, class BinaryOperation>
+using IsRedux = sycl::detail::bool_constant<detail::is_integral<T>::value &&
+                                  detail::IsBitAND<T, BinaryOperation>::value ||
+                              detail::IsBitOR<T, BinaryOperation>::value ||
+                              detail::IsBitXOR<T, BinaryOperation>::value ||
+                              (detail::IsPlus<T, BinaryOperation>::value ||
+                               detail::IsMinimum<T, BinaryOperation>::value ||
+                               detail::IsMaximum<T, BinaryOperation>::value)>;
+
+// ---- reduce_over_group
+template <typename T, class BinaryOperation, size_t cluster_size>
+detail::enable_if_t<(std::is_scalar<T>::value &&
+                     IsRedux<T, BinaryOperation>::value &&
+                     detail::is_native_op<T, BinaryOperation>::value),
+                    T>
+reduce_over_group(sycl::ext::oneapi::experimental::cluster_group<cluster_size, sycl::sub_group> cg, T x,
+                  BinaryOperation binary_op) {
+  static_assert(
+      std::is_same<decltype(binary_op(x, x)), T>::value,
+      "Result type of binary_op must match reduction accumulation type.");
+#ifdef __SYCL_DEVICE_ONLY__
+  uint32_t mask_bits;
+  cg.get_mask().extract_bits(mask_bits);
+  return sycl::detail::calc<T, __spv::GroupOperation::Reduce,
+                            __spv::Scope::Subgroup>(
+      typename sycl::detail::GroupOpTag<T>::type(), x, binary_op, mask_bits);
+#else
+  throw runtime_error("Group algorithms are not supported on host device.",
+                      CL_INVALID_DEVICE);
+#endif
+}
+
+template <typename V, typename T, class BinaryOperation, size_t cluster_size>
+detail::enable_if_t<(std::is_scalar<V>::value && std::is_scalar<T>::value &&
+                     IsRedux<T, BinaryOperation>::value &&
+                     detail::is_native_op<V, BinaryOperation>::value),
+                    T>
+reduce_over_group(sycl::ext::oneapi::experimental::cluster_group<cluster_size, sycl::sub_group> cg, V x, T init,
+                  BinaryOperation binary_op) {
+  static_assert(
+      std::is_same<decltype(binary_op(init, x)), T>::value,
+      "Result type of binary_op must match reduction accumulation type.");
+#ifdef __SYCL_DEVICE_ONLY__
+  return binary_op(init, reduce_over_group(cg, x, binary_op));
+#else
+  //(void)cg;
+  throw runtime_error("Group algorithms are not supported on host device.",
+                      CL_INVALID_DEVICE);
+#endif
 }
 
 template <typename Group, typename Ptr, class BinaryOperation>

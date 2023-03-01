@@ -30,6 +30,11 @@ public:
   static constexpr int dimensions = 1;
   static constexpr sycl::memory_scope fence_scope = ParentGroup::fence_scope;
 
+#if defined(__SYCL_DEVICE_ONLY__) && defined(__NVPTX__)
+ext::oneapi::sub_group_mask cuda_mask;
+ext::oneapi::sub_group_mask get_mask(){return cuda_mask;};
+#endif
+
   id_type get_group_id() const {
 #ifdef __SYCL_DEVICE_ONLY__
     return __spirv_SubgroupLocalInvocationId() / ClusterSize;
@@ -112,7 +117,12 @@ public:
   }
 
 protected:
+  #if defined(__SYCL_DEVICE_ONLY__) && defined(__NVPTX__)
+  cluster_group(ext::oneapi::sub_group_mask _cg):cuda_mask(_cg) {}
+  #else
   cluster_group() {}
+  #endif
+
 
   friend cluster_group<ClusterSize, ParentGroup>
   get_cluster_group<ClusterSize, ParentGroup>(ParentGroup g);
