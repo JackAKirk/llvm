@@ -40,6 +40,9 @@ enum class aspect;
 namespace ext::oneapi {
 // Forward declaration
 class filter_selector;
+
+using peer_access = RT::PIPeerAttr;
+
 } // namespace ext::oneapi
 
 /// The SYCL device class encapsulates a single SYCL device on which kernels
@@ -88,6 +91,13 @@ public:
   device &operator=(const device &rhs) = default;
 
   device &operator=(device &&rhs) = default;
+
+  void ext_oneapi_enable_peer_access(const device &peer);
+  void ext_oneapi_disable_peer_access(const device &peer);
+  bool
+  ext_oneapi_can_access_peer(const device &peer,
+                             ext::oneapi::peer_access value =
+                                 ext::oneapi::peer_access::access_supported);
 
   /// Get instance of device
   ///

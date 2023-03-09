@@ -2869,7 +2869,7 @@ pi_result hip_piEnqueueKernelLaunch(
     if (providedLocalWorkGroupSize) {
       auto isValid = [&](int dim) {
         if (local_work_size[dim] > maxThreadsPerBlock[dim])
-          return PI_ERROR_INVALID_WORK_ITEM_SIZE;
+          return PI_ERROR_INVALID_WORK_GROUP_SIZE;
         // Checks that local work sizes are a divisor of the global work sizes
         // which includes that the local work sizes are neither larger than the
         // global work sizes and not 0.
@@ -5337,6 +5337,10 @@ pi_result hip_piextEnqueueDeviceGlobalVariableRead(
 }
 
 // This API is called by Sycl RT to notify the end of the plugin lifetime.
+// Windows: dynamically loaded plugins might have been unloaded already
+// when this is called. Sycl RT holds onto the PI plugin so it can be
+// called safely. But this is not transitive. If the PI plugin in turn
+// dynamically loaded a different DLL, that may have been unloaded. 
 // TODO: add a global variable lifetime management code here (see
 // pi_level_zero.cpp for reference) Currently this is just a NOOP.
 pi_result hip_piTearDown(void *PluginParameter) {
@@ -5373,6 +5377,39 @@ pi_result hip_piGetDeviceAndHostTimer(pi_device Device, uint64_t *DeviceTime,
     *DeviceTime = (uint64_t)(elapsedTime * (double)1e6);
   }
   return PI_SUCCESS;
+}
+
+pi_result hip_piextEnablePeer(pi_device command_device, pi_device peer_device) {
+
+  std::ignore = command_device;
+  std::ignore = peer_device;
+
+  sycl::detail::pi::die("hip_piextEnablePeer not "
+                        "implemented");
+  return {};
+}
+
+pi_result hip_piextDisablePeer(pi_device command_device,
+                               pi_device peer_device) {
+
+  std::ignore = command_device;
+  std::ignore = peer_device;
+
+  sycl::detail::pi::die("hip_piextDisablePeer not "
+                        "implemented");
+  return {};
+}
+
+pi_result hip_piextCanAccessPeer(pi_device command_device,
+                                 pi_device peer_device, pi_peer_attr attr) {
+
+  std::ignore = command_device;
+  std::ignore = peer_device;
+  std::ignore = attr;
+
+  sycl::detail::pi::die("hip_piextCanAccessPeer not "
+                        "implemented");
+  return {};
 }
 
 const char SupportedVersion[] = _PI_HIP_PLUGIN_VERSION_STRING;
@@ -5524,11 +5561,21 @@ pi_result piPluginInit(pi_plugin *PluginInit) {
   _PI_CL(piPluginGetLastError, hip_piPluginGetLastError)
   _PI_CL(piTearDown, hip_piTearDown)
   _PI_CL(piGetDeviceAndHostTimer, hip_piGetDeviceAndHostTimer)
+  // Peer to Peer
+  _PI_CL(piextEnablePeer, hip_piextEnablePeer)
+  _PI_CL(piextDisablePeer, hip_piextDisablePeer)
+  _PI_CL(piextCanAccessPeer, hip_piextCanAccessPeer)
 
 #undef _PI_CL
 
   return PI_SUCCESS;
 }
+
+#ifdef _WIN32
+#define __SYCL_PLUGIN_DLL_NAME "pi_hip.dll"
+#include "../common_win_pi_trace/common_win_pi_trace.hpp"
+#undef __SYCL_PLUGIN_DLL_NAME
+#endif
 
 } // extern "C"
 

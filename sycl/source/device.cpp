@@ -200,5 +200,34 @@ pi_native_handle device::getNative() const { return impl->getNative(); }
 
 bool device::has(aspect Aspect) const { return impl->has(Aspect); }
 
+void device::ext_oneapi_enable_peer_access(const device &peer) {
+  const RT::PiDevice Device = impl->getHandleRef();
+  const RT::PiDevice Peer = peer.impl->getHandleRef();
+  if (Device != Peer) {
+    const detail::plugin &Plugin = impl->getPlugin();
+    Plugin.call<detail::PiApiKind::piextEnablePeer>(Device, Peer);
+  }
+}
+
+void device::ext_oneapi_disable_peer_access(const device &peer) {
+  const RT::PiDevice Device = impl->getHandleRef();
+  const RT::PiDevice Peer = peer.impl->getHandleRef();
+  if (Device != Peer) {
+    const detail::plugin Plugin = impl->getPlugin();
+    Plugin.call<detail::PiApiKind::piextDisablePeer>(Device, Peer);
+  }
+}
+
+bool device::ext_oneapi_can_access_peer(const device &peer,
+                                        ext::oneapi::peer_access attr) {
+  const RT::PiDevice Device = impl->getHandleRef();
+  const RT::PiDevice Peer = peer.impl->getHandleRef();
+
+  if (Device == Peer)
+    return true;
+  const detail::plugin Plugin = impl->getPlugin();
+  return Plugin.call_nocheck<detail::PiApiKind::piextCanAccessPeer>(Device, Peer, attr) == PI_SUCCESS;
+}
+
 } // __SYCL_INLINE_VER_NAMESPACE(_V1)
 } // namespace sycl
