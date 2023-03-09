@@ -72,7 +72,6 @@ using _pi_stream_guard = std::unique_lock<std::mutex>;
 ///  when devices are used.
 ///
 struct _pi_platform {
-  static CUevent evBase_; // CUDA event used as base counter
   std::vector<std::unique_ptr<_pi_device>> devices_;
 };
 
@@ -86,27 +85,32 @@ private:
   using native_type = CUdevice;
 
   native_type cuDevice_;
+  CUcontext cuContext_;
+  CUevent evBase_; // CUDA event used as base counter
   std::atomic_uint32_t refCount_;
   pi_platform platform_;
-  pi_context context_;
 
   static constexpr pi_uint32 max_work_item_dimensions = 3u;
   size_t max_work_item_sizes[max_work_item_dimensions];
   int max_work_group_size;
 
 public:
-  _pi_device(native_type cuDevice, pi_platform platform)
-      : cuDevice_(cuDevice), refCount_{1}, platform_(platform) {}
+  _pi_device(native_type cuDevice, CUcontext cuContext, CUevent evBase,
+             pi_platform platform)
+      : cuDevice_(cuDevice), cuContext_(cuContext),
+        evBase_(evBase), refCount_{1}, platform_(platform) {}
+
+  ~_pi_device() { cuDevicePrimaryCtxRelease(cuDevice_); }
 
   native_type get() const noexcept { return cuDevice_; };
+
+  CUcontext get_context() const noexcept { return cuContext_; };
 
   pi_uint32 get_reference_count() const noexcept { return refCount_; }
 
   pi_platform get_platform() const noexcept { return platform_; };
 
-  void set_context(pi_context ctx) { context_ = ctx; };
-
-  pi_context get_context() { return context_; };
+  pi_uint64 get_elapsed_time(CUevent) const;
 
   void save_max_work_item_sizes(size_t size,
                                 size_t *save_max_work_item_sizes) noexcept {
@@ -174,16 +178,12 @@ struct _pi_context {
 
   using native_type = CUcontext;
 
-  enum class kind { primary, user_defined } kind_;
-  std::vector<native_type> cuContexts_;
+  native_type cuContext_;
   std::vector<pi_device> deviceIds_;
   std::atomic_uint32_t refCount_;
 
-  CUevent evBase_; // CUDA event used as base counter
-  _pi_context(kind k, std::vector<CUcontext> &&ctxts,
-              std::vector<pi_device> &&devIds, bool backend_owns = true)
-      : kind_{k}, cuContexts_{std::move(ctxts)}, deviceIds_{std::move(devIds)},
-        refCount_{1}, has_ownership{backend_owns} {
+  _pi_context(std::vector<pi_device> &&devIds)
+      : deviceIds_{std::move(devIds)}, refCount_{1} {
     for (pi_device dev : deviceIds_) {
       cuda_piDeviceRetain(dev);
     }
@@ -212,8 +212,6 @@ struct _pi_context {
     return deviceIds_;
   }
 
-  const std::vector<CUcontext> &get() const noexcept { return cuContexts_; }
-
   size_t device_index(pi_device device) {
     for (size_t i = 0; i < deviceIds_.size(); i++) {
       if (deviceIds_[i] == device) {
@@ -227,13 +225,11 @@ struct _pi_context {
   CUcontext get(pi_device device) {
     for (size_t i = 0; i < deviceIds_.size(); i++) {
       if (deviceIds_[i] == device) {
-        return cuContexts_[i];
+        return device->get_context();
       }
     }
     return nullptr;
   }
-
-  bool is_primary() const noexcept { return kind_ == kind::primary; }
 
   pi_uint32 increment_reference_count() noexcept { return ++refCount_; }
 
@@ -241,12 +237,9 @@ struct _pi_context {
 
   pi_uint32 get_reference_count() const noexcept { return refCount_; }
 
-  bool backend_has_ownership() const noexcept { return has_ownership; }
-
 private:
   std::mutex mutex_;
   std::vector<deleter_data> extended_deleters_;
-  const bool has_ownership;
 };
 
 /// PI Mem mapping to CUDA memory allocations, both data and texture/surface.
@@ -260,6 +253,9 @@ struct _pi_mem {
 
   // Context where the memory object is accessibles
   pi_context context_;
+
+  // Device where the memory is located
+  pi_device device_;
 
   /// Reference counting of the handler
   std::atomic_uint32_t refCount_;
@@ -363,9 +359,11 @@ struct _pi_mem {
   } mem_;
 
   /// Constructs the PI MEM handler for a non-typed allocation ("buffer")
-  _pi_mem(pi_context ctxt, pi_mem parent, mem_::buffer_mem_::alloc_mode mode,
-          CUdeviceptr ptr, void *host_ptr, size_t size)
-      : context_{ctxt}, refCount_{1}, mem_type_{mem_type::buffer} {
+  _pi_mem(pi_context ctxt, pi_device dev, pi_mem parent,
+          mem_::buffer_mem_::alloc_mode mode, CUdeviceptr ptr, void *host_ptr,
+          size_t size)
+      : context_{ctxt}, device_{dev}, refCount_{1}, mem_type_{
+                                                        mem_type::buffer} {
     mem_.buffer_mem_.ptr_ = ptr;
     mem_.buffer_mem_.parent_ = parent;
     mem_.buffer_mem_.hostPtr_ = host_ptr;
@@ -382,9 +380,10 @@ struct _pi_mem {
   };
 
   /// Constructs the PI allocation for an Image object (surface in CUDA)
-  _pi_mem(pi_context ctxt, CUarray array, CUsurfObject surf,
+  _pi_mem(pi_context ctxt, pi_device dev, CUarray array, CUsurfObject surf,
           pi_mem_type image_type, void *host_ptr)
-      : context_{ctxt}, refCount_{1}, mem_type_{mem_type::surface} {
+      : context_{ctxt}, device_{dev}, refCount_{1}, mem_type_{
+                                                        mem_type::surface} {
     // Ignore unused parameter
     (void)host_ptr;
 
@@ -414,6 +413,8 @@ struct _pi_mem {
   bool is_image() const noexcept { return mem_type_ == mem_type::surface; }
 
   pi_context get_context() const noexcept { return context_; }
+  pi_device get_device() const noexcept { return device_; }
+  CUcontext get_native_context() const noexcept { return context_->get(device_); }
 
   pi_uint32 increment_reference_count() noexcept { return ++refCount_; }
 
@@ -508,7 +509,7 @@ struct _pi_queue {
     if (stream_token == std::numeric_limits<pi_uint32>::max()) {
       return false;
     }
-    return last_sync_compute_streams_ >= stream_token;
+    return last_sync_compute_streams_ > stream_token;
   }
 
   bool can_reuse_stream(pi_uint32 stream_token) {
@@ -605,9 +606,6 @@ struct _pi_queue {
       unsigned int end = num_compute_streams_ < size
                              ? num_compute_streams_
                              : compute_stream_idx_.load();
-      if (ResetUsed) {
-        last_sync_compute_streams_ = end;
-      }
       if (end - start >= size) {
         sync_compute(0, size);
       } else {
@@ -620,6 +618,9 @@ struct _pi_queue {
           sync_compute(0, end);
         }
       }
+      if (ResetUsed) {
+        last_sync_compute_streams_ = end;
+      }
     }
     {
       unsigned int size = static_cast<unsigned int>(transfer_streams_.size());
@@ -629,9 +630,6 @@ struct _pi_queue {
         unsigned int end = num_transfer_streams_ < size
                                ? num_transfer_streams_
                                : transfer_stream_idx_.load();
-        if (ResetUsed) {
-          last_sync_transfer_streams_ = end;
-        }
         if (end - start >= size) {
           sync_transfer(0, size);
         } else {
@@ -643,6 +641,9 @@ struct _pi_queue {
             sync_transfer(start, size);
             sync_transfer(0, end);
           }
+        }
+        if (ResetUsed) {
+          last_sync_transfer_streams_ = end;
         }
       }
     }

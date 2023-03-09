@@ -254,7 +254,7 @@ private:
   bool MIsAssertFailSupported = false;
   mutable std::string MDeviceName;
   mutable std::once_flag MDeviceNameFlag;
-  std::pair<uint64_t, uint64_t> MDeviceHostBaseTime;
+
 
   friend bool sameDev(const std::shared_ptr<device_impl> &LHS,
                       const std::shared_ptr<device_impl> &RHS);
@@ -263,6 +263,8 @@ private:
                       const std::shared_ptr<context_impl> &Ctx1,
                       const std::shared_ptr<device_impl> &Dev2,
                       const std::shared_ptr<context_impl> &Ctx2);
+
+  std::pair<uint64_t, uint64_t> MDeviceHostBaseTime;
 }; // class device_impl
 
 } // namespace detail

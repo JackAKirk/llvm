@@ -190,20 +190,7 @@ class ScopedContext {
 public:
   ScopedContext(CUcontext ctxt) { set_context(ctxt); }
 
-  // Creating a scoped context from a device will simply use the primary
-  // context, this should be used when there is no other appropriate context,
-  // such as for the device infos.
-  ScopedContext(pi_device device) : device(device) {
-    CUcontext ctxt;
-    cuDevicePrimaryCtxRetain(&ctxt, device->get());
-
-    set_context(ctxt);
-  }
-
-  ~ScopedContext() {
-    if (device)
-      cuDevicePrimaryCtxRelease(device->get());
-  }
+  ~ScopedContext() {}
 
 private:
   void set_context(CUcontext desired) {
@@ -217,8 +204,6 @@ private:
       PI_CHECK_ERROR(cuCtxSetCurrent(desired));
     }
   }
-
-  pi_device device;
 };
 
 /// \cond NODOXY
@@ -303,7 +288,7 @@ void guessLocalWorkSize(_pi_device *device, size_t *threadsPerBlock,
   threadsPerBlock[2] = ((global_work_size[2] - 1) / gridDim[2]) + 1;
 
   PI_CHECK_ERROR(cuOccupancyMaxPotentialBlockSize(
-      &minGrid, &maxBlockSize, kernel->get()[0], NULL, local_size,
+      &minGrid, &maxBlockSize, kernel->get(device), NULL, local_size,
       maxThreadsPerBlock[0]));
 
   gridDim[0] = maxBlockSize / (threadsPerBlock[1] * threadsPerBlock[2]);
@@ -346,6 +331,34 @@ pi_result enqueueEventsWait(pi_queue command_queue, CUstream stream,
     return err;
   } catch (...) {
     return PI_ERROR_UNKNOWN;
+  }
+}
+
+template <typename PtrT>
+void getUSMHostOrDevicePtr(PtrT usm_ptr, CUmemorytype *out_mem_type,
+                           CUdeviceptr *out_dev_ptr, PtrT *out_host_ptr) {
+  // do not throw if cuPointerGetAttribute returns CUDA_ERROR_INVALID_VALUE
+  // checks with PI_CHECK_ERROR are not suggested
+  CUresult ret = cuPointerGetAttribute(
+      out_mem_type, CU_POINTER_ATTRIBUTE_MEMORY_TYPE, (CUdeviceptr)usm_ptr);
+  assert((*out_mem_type != CU_MEMORYTYPE_ARRAY &&
+          *out_mem_type != CU_MEMORYTYPE_UNIFIED) &&
+         "ARRAY, UNIFIED types are not supported!");
+
+  // pointer not known to the CUDA subsystem (possibly a system allocated ptr)
+  if (ret == CUDA_ERROR_INVALID_VALUE) {
+    *out_mem_type = CU_MEMORYTYPE_HOST;
+    *out_dev_ptr = 0;
+    *out_host_ptr = usm_ptr;
+
+    // todo: resets the above "non-stick" error
+  } else if (ret == CUDA_SUCCESS) {
+    *out_dev_ptr = (*out_mem_type == CU_MEMORYTYPE_DEVICE)
+                       ? reinterpret_cast<CUdeviceptr>(usm_ptr)
+                       : 0;
+    *out_host_ptr = (*out_mem_type == CU_MEMORYTYPE_HOST) ? usm_ptr : nullptr;
+  } else {
+    PI_CHECK_ERROR(ret);
   }
 }
 
@@ -575,31 +588,27 @@ bool _pi_event::is_completed() const noexcept {
   return true;
 }
 
-pi_uint64 _pi_event::get_queued_time() const {
+pi_uint64 _pi_device::get_elapsed_time(CUevent ev) const {
   float miliSeconds = 0.0f;
-  assert(is_started());
 
-  PI_CHECK_ERROR(
-      cuEventElapsedTime(&miliSeconds, _pi_platform::evBase_, evQueued_));
+  PI_CHECK_ERROR(cuEventElapsedTime(&miliSeconds, evBase_, ev));
+
   return static_cast<pi_uint64>(miliSeconds * 1.0e6);
+}
+
+pi_uint64 _pi_event::get_queued_time() const {
+  assert(is_started());
+  return queue_->get_device()->get_elapsed_time(evQueued_);
 }
 
 pi_uint64 _pi_event::get_start_time() const {
-  float miliSeconds = 0.0f;
   assert(is_started());
-
-  PI_CHECK_ERROR(
-      cuEventElapsedTime(&miliSeconds, _pi_platform::evBase_, evStart_));
-  return static_cast<pi_uint64>(miliSeconds * 1.0e6);
+  return queue_->get_device()->get_elapsed_time(evStart_);
 }
 
 pi_uint64 _pi_event::get_end_time() const {
-  float miliSeconds = 0.0f;
   assert(is_started() && is_recorded());
-
-  PI_CHECK_ERROR(
-      cuEventElapsedTime(&miliSeconds, _pi_platform::evBase_, evEnd_));
-  return static_cast<pi_uint64>(miliSeconds * 1.0e6);
+  return queue_->get_device()->get_elapsed_time(evEnd_);
 }
 
 pi_result _pi_event::record() {
@@ -760,12 +769,13 @@ pi_result _pi_program::build_program(const char *build_options) {
   options[3] = CU_JIT_ERROR_LOG_BUFFER_SIZE_BYTES;
   optionVals[3] = (void *)(long)MAX_LOG_SIZE;
 
-  auto native_ctxts = get_context()->get();
+  auto devs = get_context()->get_devices();
+
   // we count the build as successful if it succeeds on at least one device
   bool success = false;
   CUresult res1 = CUDA_ERROR_NO_DEVICE;
-  for (size_t i = 0; i < native_ctxts.size(); i++) {
-    ScopedContext ctx(native_ctxts[i]);
+  for (size_t i = 0; i < devs.size(); i++) {
+    ScopedContext ctx(devs[i]->get_context());
     res1 = cuModuleLoadDataEx(&modules_[i], static_cast<const void *>(binary_),
                               numberOfOptions, options, optionVals);
     build_results_[i] = res1;
@@ -807,81 +817,6 @@ std::string getKernelNames(pi_program) {
   sycl::detail::pi::die("getKernelNames not implemented");
   return {};
 }
-
-/// RAII object that calls the reference count release function on the held PI
-/// object on destruction.
-///
-/// The `dismiss` function stops the release from happening on destruction.
-template <typename T> class ReleaseGuard {
-private:
-  T Captive;
-
-  static pi_result callRelease(pi_device Captive) {
-    return cuda_piDeviceRelease(Captive);
-  }
-
-  static pi_result callRelease(pi_context Captive) {
-    return cuda_piContextRelease(Captive);
-  }
-
-  static pi_result callRelease(pi_mem Captive) {
-    return cuda_piMemRelease(Captive);
-  }
-
-  static pi_result callRelease(pi_program Captive) {
-    return cuda_piProgramRelease(Captive);
-  }
-
-  static pi_result callRelease(pi_kernel Captive) {
-    return cuda_piKernelRelease(Captive);
-  }
-
-  static pi_result callRelease(pi_queue Captive) {
-    return cuda_piQueueRelease(Captive);
-  }
-
-  static pi_result callRelease(pi_event Captive) {
-    return cuda_piEventRelease(Captive);
-  }
-
-public:
-  ReleaseGuard() = delete;
-  /// Obj can be `nullptr`.
-  explicit ReleaseGuard(T Obj) : Captive(Obj) {}
-  ReleaseGuard(ReleaseGuard &&Other) noexcept : Captive(Other.Captive) {
-    Other.Captive = nullptr;
-  }
-
-  ReleaseGuard(const ReleaseGuard &) = delete;
-
-  /// Calls the related PI object release function if the object held is not
-  /// `nullptr` or if `dismiss` has not been called.
-  ~ReleaseGuard() {
-    if (Captive != nullptr) {
-      pi_result ret = callRelease(Captive);
-      if (ret != PI_SUCCESS) {
-        // A reported CUDA error is either an implementation or an asynchronous
-        // CUDA error for which it is unclear if the function that reported it
-        // succeeded or not. Either way, the state of the program is compromised
-        // and likely unrecoverable.
-        sycl::detail::pi::die(
-            "Unrecoverable program state reached in cuda_piMemRelease");
-      }
-    }
-  }
-
-  ReleaseGuard &operator=(const ReleaseGuard &) = delete;
-
-  ReleaseGuard &operator=(ReleaseGuard &&Other) {
-    Captive = Other.Captive;
-    Other.Captive = nullptr;
-    return *this;
-  }
-
-  /// End the guard and do not release the reference count of the held
-  /// PI object.
-  void dismiss() { Captive = nullptr; }
-};
 
 //-- PI API implementation
 extern "C" {
@@ -930,8 +865,20 @@ pi_result cuda_piPlatformsGet(pi_uint32 num_entries, pi_platform *platforms,
             for (int i = 0; i < numDevices; ++i) {
               CUdevice device;
               err = PI_CHECK_ERROR(cuDeviceGet(&device, i));
+
+              CUcontext context;
+              err = PI_CHECK_ERROR(cuDevicePrimaryCtxRetain(&context, device));
+
+              ScopedContext active(context);
+              CUevent evBase;
+              err = PI_CHECK_ERROR(cuEventCreate(&evBase, CU_EVENT_DEFAULT));
+
+              // Use default stream to record base event counter
+              err = PI_CHECK_ERROR(cuEventRecord(evBase, 0));
+
               platformId.devices_.emplace_back(
-                  new _pi_device{device, &platformId});
+                  new _pi_device{device, context, evBase, &platformId});
+
               {
                 const auto &dev = platformId.devices_.back().get();
                 size_t maxWorkGroupSize = 0u;
@@ -1091,7 +1038,6 @@ pi_result cuda_piContextGetInfo(pi_context context, pi_context_info param_name,
                    capabilities);
   }
   case PI_EXT_ONEAPI_CONTEXT_INFO_USM_MEMCPY2D_SUPPORT:
-    // 2D USM memcpy is supported.
     return getInfo<pi_bool>(param_value_size, param_value, param_value_size_ret,
                             true);
   case PI_EXT_ONEAPI_CONTEXT_INFO_USM_FILL2D_SUPPORT:
@@ -1191,6 +1137,8 @@ pi_result cuda_piDeviceGetInfo(pi_device device, pi_device_info param_name,
   static constexpr pi_uint32 max_work_item_dimensions = 3u;
 
   assert(device != nullptr);
+
+  ScopedContext active(device->get_context());
 
   switch (param_name) {
   case PI_DEVICE_INFO_TYPE: {
@@ -1970,7 +1918,6 @@ pi_result cuda_piDeviceGetInfo(pi_device device, pi_device_info param_name,
   }
 
   case PI_EXT_INTEL_DEVICE_INFO_FREE_MEMORY: {
-    ScopedContext active(device);
     size_t FreeMemory = 0;
     size_t TotalMemory = 0;
     sycl::detail::pi::assertion(cuMemGetInfo(&FreeMemory, &TotalMemory) ==
@@ -2003,8 +1950,35 @@ pi_result cuda_piDeviceGetInfo(pi_device device, pi_device_info param_name,
                    pi_int32{1});
   }
 
+  case PI_DEVICE_INFO_DEVICE_ID: {
+    int value = 0;
+    sycl::detail::pi::assertion(
+        cuDeviceGetAttribute(&value, CU_DEVICE_ATTRIBUTE_PCI_DEVICE_ID,
+                             device->get()) == CUDA_SUCCESS);
+    sycl::detail::pi::assertion(value >= 0);
+    return getInfo(param_value_size, param_value, param_value_size_ret, value);
+  }
+
+  case PI_DEVICE_INFO_UUID: {
+    int driver_version = 0;
+    cuDriverGetVersion(&driver_version);
+    int major = driver_version / 1000;
+    int minor = driver_version % 1000 / 10;
+    CUuuid uuid;
+    if ((major > 11) || (major == 11 && minor >= 4)) {
+      sycl::detail::pi::assertion(cuDeviceGetUuid_v2(&uuid, device->get()) ==
+                                  CUDA_SUCCESS);
+    } else {
+      sycl::detail::pi::assertion(cuDeviceGetUuid(&uuid, device->get()) ==
+                                  CUDA_SUCCESS);
+    }
+    std::array<unsigned char, 16> name;
+    std::copy(uuid.bytes, uuid.bytes + 16, name.begin());
+    return getInfoArray(16, param_value_size, param_value, param_value_size_ret,
+                        name.data());
+  }
+
     // TODO: Investigate if this information is available on CUDA.
-  case PI_DEVICE_INFO_DEVICE_ID:
   case PI_DEVICE_INFO_PCI_ADDRESS:
   case PI_DEVICE_INFO_GPU_EU_COUNT:
   case PI_DEVICE_INFO_GPU_EU_SIMD_WIDTH:
@@ -2013,10 +1987,6 @@ pi_result cuda_piDeviceGetInfo(pi_device device, pi_device_info param_name,
   case PI_DEVICE_INFO_GPU_EU_COUNT_PER_SUBSLICE:
   case PI_DEVICE_INFO_GPU_HW_THREADS_PER_EU:
   case PI_DEVICE_INFO_MAX_MEM_BANDWIDTH:
-    // TODO: Check if Intel device UUID extension is utilized for CUDA.
-    // For details about this extension, see
-    // sycl/doc/extensions/supported/sycl_ext_intel_device_info.md
-  case PI_DEVICE_INFO_UUID:
     return PI_ERROR_INVALID_VALUE;
 
   default:
@@ -2128,75 +2098,10 @@ pi_result cuda_piContextCreate(const pi_context_properties *properties,
   assert(retcontext != nullptr);
   pi_result errcode_ret = PI_SUCCESS;
 
-  // Parse properties.
-  bool property_cuda_primary = false;
-  while (properties && (0 != *properties)) {
-    // Consume property ID.
-    pi_context_properties id = *properties;
-    ++properties;
-    // Consume property value.
-    pi_context_properties value = *properties;
-    ++properties;
-    switch (id) {
-    case __SYCL_PI_CONTEXT_PROPERTIES_CUDA_PRIMARY:
-      assert(value == PI_FALSE || value == PI_TRUE);
-      property_cuda_primary = static_cast<bool>(value);
-      break;
-    default:
-      // Unknown property.
-      sycl::detail::pi::die(
-          "Unknown piContextCreate property in property list");
-      return PI_ERROR_INVALID_VALUE;
-    }
-  }
-
   std::unique_ptr<_pi_context> piContextPtr{nullptr};
   try {
-    if (property_cuda_primary) {
-      if (num_devices != 1) {
-        return PI_ERROR_INVALID_VALUE;
-      }
-      // Use the CUDA primary context and assume that we want to use it
-      // immediately as we want to forge context switches.
-      CUcontext Ctxt;
-      errcode_ret =
-          PI_CHECK_ERROR(cuDevicePrimaryCtxRetain(&Ctxt, devices[0]->get()));
-      piContextPtr = std::unique_ptr<_pi_context>(
-          new _pi_context{_pi_context::kind::primary, {Ctxt}, {*devices}});
-      errcode_ret = PI_CHECK_ERROR(cuCtxPushCurrent(Ctxt));
-    } else {
-      std::vector<CUcontext> cuda_contexts(num_devices);
-      std::vector<pi_device> devices_vec(num_devices);
-      CUcontext current;
-      PI_CHECK_ERROR(cuCtxGetCurrent(&current));
-      for (pi_uint32 device_num = 0; device_num < num_devices; device_num++) {
-        // Create a scoped context.
-        errcode_ret = PI_CHECK_ERROR(cuCtxCreate(&cuda_contexts[device_num],
-                                                 CU_CTX_MAP_HOST,
-                                                 devices[device_num]->get()));
-        devices_vec[device_num] = devices[device_num];
-      }
-      piContextPtr = std::unique_ptr<_pi_context>(
-          new _pi_context{_pi_context::kind::user_defined,
-                          std::move(cuda_contexts), std::move(devices_vec)});
-
-      // For non-primary scoped contexts keep the last active on top of the
-      // stack as `cuCtxCreate` replaces it implicitly otherwise. Primary
-      // contexts are kept on top of the stack, so the previous context is not
-      // queried and therefore not recovered.
-      // PI_CHECK_ERROR(cuCtxSetCurrent(current));
-    }
-    static std::once_flag initFlag;
-    std::call_once(
-        initFlag,
-        [](pi_result &err) {
-          // Use default stream to record base event counter
-          PI_CHECK_ERROR(
-              cuEventCreate(&_pi_platform::evBase_, CU_EVENT_DEFAULT));
-          PI_CHECK_ERROR(cuEventRecord(_pi_platform::evBase_, 0));
-        },
-        errcode_ret);
-
+    piContextPtr = std::unique_ptr<_pi_context>(new _pi_context(
+        std::vector<pi_device>(devices, devices + num_devices)));
     *retcontext = piContextPtr.release();
   } catch (pi_result err) {
     errcode_ret = err;
@@ -2207,7 +2112,6 @@ pi_result cuda_piContextCreate(const pi_context_properties *properties,
 }
 
 pi_result cuda_piContextRelease(pi_context ctxt) {
-
   assert(ctxt != nullptr);
 
   if (ctxt->decrement_reference_count() > 0) {
@@ -2217,32 +2121,7 @@ pi_result cuda_piContextRelease(pi_context ctxt) {
 
   std::unique_ptr<_pi_context> context{ctxt};
 
-  if (!ctxt->backend_has_ownership())
-    return PI_SUCCESS;
-
-  if (!ctxt->is_primary()) {
-    CUcontext initial = nullptr;
-    cuCtxGetCurrent(&initial);
-    for (CUcontext cuCtxt : ctxt->get()) {
-      if (cuCtxt != initial) {
-        PI_CHECK_ERROR(cuCtxPushCurrent(cuCtxt));
-      }
-      PI_CHECK_ERROR(cuCtxSynchronize());
-      CUcontext current;
-      cuCtxGetCurrent(&current);
-      if (cuCtxt == current) {
-        PI_CHECK_ERROR(cuCtxPopCurrent(&current));
-      }
-      PI_CHECK_ERROR(cuCtxDestroy(cuCtxt));
-    }
-    return PI_SUCCESS;
-  } else {
-    // Primary context is not destroyed, but released
-    CUdevice cuDev = ctxt->get_devices()[0]->get();
-    CUcontext current;
-    cuCtxPopCurrent(&current);
-    return PI_CHECK_ERROR(cuDevicePrimaryCtxRelease(cuDev));
-  }
+  return PI_SUCCESS;
 }
 
 /// Gets the native CUDA handle of a PI context object
@@ -2253,7 +2132,13 @@ pi_result cuda_piContextRelease(pi_context ctxt) {
 /// \return PI_SUCCESS
 pi_result cuda_piextContextGetNativeHandle(pi_context context,
                                            pi_native_handle *nativeHandle) {
-  *nativeHandle = reinterpret_cast<pi_native_handle>(context->get()[0]);
+  // Currently only support context interop with one device
+  if (context->get_devices().size() != 1) {
+    return PI_ERROR_INVALID_CONTEXT;
+  }
+
+  *nativeHandle = reinterpret_cast<pi_native_handle>(
+      context->get_devices()[0]->get_context());
   return PI_SUCCESS;
 }
 
@@ -2269,31 +2154,15 @@ pi_result cuda_piextContextCreateWithNativeHandle(pi_native_handle nativeHandle,
                                                   const pi_device *devices,
                                                   bool ownNativeHandle,
                                                   pi_context *piContext) {
+  (void)nativeHandle;
   (void)num_devices;
   (void)devices;
   (void)ownNativeHandle;
+  (void)piContext;
   assert(piContext != nullptr);
   assert(ownNativeHandle == false);
 
-  CUcontext newContext = reinterpret_cast<CUcontext>(nativeHandle);
-
-  ScopedContext active(newContext);
-
-  // Get context's native device
-  CUdevice cu_device;
-  pi_result retErr = PI_CHECK_ERROR(cuCtxGetDevice(&cu_device));
-
-  // Create a SYCL device from the ctx device
-  pi_device device = nullptr;
-  retErr = cuda_piextDeviceCreateWithNativeHandle(cu_device, nullptr, &device);
-
-  // Create sycl context
-  *piContext = new _pi_context{_pi_context::kind::user_defined,
-                               {newContext},
-                               {device},
-                               /*backend_owns*/ false};
-
-  return retErr;
+  return PI_ERROR_INVALID_OPERATION;
 }
 
 /// Creates a PI Memory object using a CUDA memory allocation.
@@ -2343,8 +2212,8 @@ pi_result cuda_piMemBufferCreate(pi_context context, pi_device device,
     if (retErr == PI_SUCCESS) {
       pi_mem parentBuffer = nullptr;
 
-      auto piMemObj = std::unique_ptr<_pi_mem>(
-          new _pi_mem{context, parentBuffer, allocMode, ptr, host_ptr, size});
+      auto piMemObj = std::unique_ptr<_pi_mem>(new _pi_mem{
+          context, device, parentBuffer, allocMode, ptr, host_ptr, size});
       if (piMemObj != nullptr) {
         retMemObj = piMemObj.release();
         if (performInitialCopy) {
@@ -2396,7 +2265,7 @@ pi_result cuda_piMemRelease(pi_mem memObj) {
       return PI_SUCCESS;
     }
 
-    ScopedContext active(uniqueMemObj->get_context()->get()[0]);
+    ScopedContext active(uniqueMemObj->get_native_context());
 
     if (memObj->mem_type_ == _pi_mem::mem_type::buffer) {
       switch (uniqueMemObj->mem_.buffer_mem_.allocMode_) {
@@ -2469,7 +2338,6 @@ pi_result cuda_piMemBufferPartition(pi_mem parent_buffer, pi_mem_flags flags,
           parent_buffer->mem_.buffer_mem_.get_size()) &&
          "PI_ERROR_INVALID_BUFFER_SIZE");
   // Retained indirectly due to retaining parent buffer below.
-  pi_context context = parent_buffer->context_;
   _pi_mem::mem_::buffer_mem_::alloc_mode allocMode =
       _pi_mem::mem_::buffer_mem_::alloc_mode::classic;
 
@@ -2484,14 +2352,11 @@ pi_result cuda_piMemBufferPartition(pi_mem parent_buffer, pi_mem_flags flags,
               bufferRegion.origin;
   }
 
-  ReleaseGuard<pi_mem> releaseGuard(parent_buffer);
-
   std::unique_ptr<_pi_mem> retMemObj{nullptr};
   try {
-    ScopedContext active(context->get()[0]);
-
-    retMemObj = std::unique_ptr<_pi_mem>{new _pi_mem{
-        context, parent_buffer, allocMode, ptr, hostPtr, bufferRegion.size}};
+    retMemObj = std::unique_ptr<_pi_mem>{
+        new _pi_mem{parent_buffer->get_context(), parent_buffer->get_device(),
+                    parent_buffer, allocMode, ptr, hostPtr, bufferRegion.size}};
   } catch (pi_result err) {
     *memObj = nullptr;
     return err;
@@ -2500,7 +2365,6 @@ pi_result cuda_piMemBufferPartition(pi_mem parent_buffer, pi_mem_flags flags,
     return PI_ERROR_OUT_OF_HOST_MEMORY;
   }
 
-  releaseGuard.dismiss();
   *memObj = retMemObj.release();
   return PI_SUCCESS;
 }
@@ -2891,6 +2755,7 @@ pi_result cuda_piEventsWait(pi_uint32 num_events, const pi_event *event_list) {
       return PI_ERROR_INVALID_EVENT;
     }
 
+    // all events must be in the same context
     auto context = event_list[0]->get_native_context();
     ScopedContext active(context);
 
@@ -2928,7 +2793,8 @@ pi_result cuda_piKernelCreate(pi_program program, const char *kernel_name,
 
     for (size_t i = 0; i < modules.size(); i++) {
       CUmodule module = modules[i];
-      ScopedContext active(program->get_context()->get()[i]);
+      ScopedContext active(
+          program->get_context()->get_devices()[i]->get_context());
 
       if (program->build_results_[i] != CUDA_SUCCESS) {
         cuFuncs[i] = nullptr;
@@ -3179,7 +3045,7 @@ pi_result cuda_piEnqueueKernelLaunch(
             return err;
         }
       } else {
-        guessLocalWorkSize(command_queue->device_, threadsPerBlock,
+        guessLocalWorkSize(command_queue->get_device(), threadsPerBlock,
                            global_work_size, maxThreadsPerBlock, kernel,
                            local_size);
       }
@@ -3426,8 +3292,9 @@ pi_result cuda_piMemImageCreate(pi_context context, pi_device device,
     CUsurfObject surface;
     retErr = PI_CHECK_ERROR(cuSurfObjectCreate(&surface, &image_res_desc));
 
-    auto piMemObj = std::unique_ptr<_pi_mem>(new _pi_mem{
-        context, image_array, surface, image_desc->image_type, host_ptr});
+    auto piMemObj = std::unique_ptr<_pi_mem>(
+        new _pi_mem{context, device, image_array, surface,
+                    image_desc->image_type, host_ptr});
 
     if (piMemObj == nullptr) {
       return PI_ERROR_OUT_OF_HOST_MEMORY;
@@ -3605,7 +3472,9 @@ pi_result cuda_piProgramLink(pi_context context, pi_uint32 num_devices,
   pi_result retError = PI_SUCCESS;
 
   try {
-    ScopedContext active(context->get()[0]);
+    // We need a context for the linking operations but the result can later be
+    // used in any other context, so just use the first one.
+    ScopedContext active(context->get_devices()[0]->get_context());
 
     CUlinkState state;
     std::unique_ptr<_pi_program> retProgram{new _pi_program{context}};
@@ -3733,7 +3602,8 @@ pi_result cuda_piProgramRelease(pi_program program) {
       const auto &modules = program->get();
       for (size_t i = 0; i < modules.size(); i++) {
         if (program->build_results_[i] == CUDA_SUCCESS) {
-          ScopedContext active(program->get_context()->get()[i]);
+          ScopedContext active(
+              program->get_context()->get_devices()[i]->get_context());
           result = PI_CHECK_ERROR(cuModuleUnload(modules[i]));
         }
       }
@@ -4042,7 +3912,8 @@ pi_result cuda_piEventRelease(pi_event event) {
     std::unique_ptr<_pi_event> event_ptr{event};
     pi_result result = PI_ERROR_INVALID_EVENT;
     try {
-      ScopedContext active(event->get_context()->get()[0]);
+      ScopedContext active(
+          event->get_context()->get_devices()[0]->get_context());
       result = event->release();
     } catch (...) {
       result = PI_ERROR_OUT_OF_RESOURCES;
@@ -5113,7 +4984,10 @@ pi_result cuda_piextUSMHostAlloc(void **result_ptr, pi_context context,
   assert(properties == nullptr || *properties == 0);
   pi_result result = PI_SUCCESS;
   try {
-    ScopedContext active(context->get()[0]);
+    // cuMemAllocHost requires an active context but the allocation is then
+    // available on all the USM compatible contexts and devices so we can
+    // simply use the first one.
+    ScopedContext active(context->get_devices()[0]->get_context());
     result = PI_CHECK_ERROR(cuMemAllocHost(result_ptr, size));
   } catch (pi_result error) {
     result = error;
@@ -5180,7 +5054,7 @@ pi_result cuda_piextUSMFree(pi_context context, void *ptr) {
   assert(context != nullptr);
   pi_result result = PI_SUCCESS;
   try {
-    ScopedContext active(context->get()[0]);
+    ScopedContext active(context->get_devices()[0]->get_context());
     bool is_managed;
     unsigned int type;
     void *attribute_values[2] = {&is_managed, &type};
@@ -5188,6 +5062,7 @@ pi_result cuda_piextUSMFree(pi_context context, void *ptr) {
                                          CU_POINTER_ATTRIBUTE_MEMORY_TYPE};
     result = PI_CHECK_ERROR(cuPointerGetAttributes(
         2, attributes, attribute_values, (CUdeviceptr)ptr));
+
     assert(type == CU_MEMORYTYPE_DEVICE || type == CU_MEMORYTYPE_HOST);
     if (is_managed || type == CU_MEMORYTYPE_DEVICE) {
       // Memory allocated with cuMemAlloc and cuMemAllocManaged must be freed
@@ -5497,39 +5372,17 @@ pi_result cuda_piextUSMEnqueueMemcpy2D(pi_queue queue, pi_bool blocking,
       (*event)->start();
     }
 
-    // Determine the direction of Copy using cuPointerGetAttributes
+    // Determine the direction of copy using cuPointerGetAttribute
     // for both the src_ptr and dst_ptr
-    // TODO: Doesn't yet support CU_MEMORYTYPE_UNIFIED
-    CUpointer_attribute attributes = {CU_POINTER_ATTRIBUTE_MEMORY_TYPE};
-
-    CUmemorytype src_type = static_cast<CUmemorytype>(0);
-    void *src_attribute_values[] = {(void *)(&src_type)};
-    result = PI_CHECK_ERROR(cuPointerGetAttributes(
-        1, &attributes, src_attribute_values, (CUdeviceptr)src_ptr));
-    assert(src_type == CU_MEMORYTYPE_DEVICE || src_type == CU_MEMORYTYPE_HOST);
-
-    CUmemorytype dst_type = static_cast<CUmemorytype>(0);
-    void *dst_attribute_values[] = {(void *)(&dst_type)};
-    result = PI_CHECK_ERROR(cuPointerGetAttributes(
-        1, &attributes, dst_attribute_values, (CUdeviceptr)dst_ptr));
-    assert(dst_type == CU_MEMORYTYPE_DEVICE || dst_type == CU_MEMORYTYPE_HOST);
-
     CUDA_MEMCPY2D cpyDesc = {0};
 
-    cpyDesc.srcMemoryType = src_type;
-    cpyDesc.srcDevice = (src_type == CU_MEMORYTYPE_DEVICE)
-                            ? reinterpret_cast<CUdeviceptr>(src_ptr)
-                            : 0;
-    cpyDesc.srcHost = (src_type == CU_MEMORYTYPE_HOST) ? src_ptr : nullptr;
-    cpyDesc.srcPitch = src_pitch;
+    getUSMHostOrDevicePtr(src_ptr, &cpyDesc.srcMemoryType, &cpyDesc.srcDevice,
+                          &cpyDesc.srcHost);
+    getUSMHostOrDevicePtr(dst_ptr, &cpyDesc.dstMemoryType, &cpyDesc.dstDevice,
+                          &cpyDesc.dstHost);
 
-    cpyDesc.dstMemoryType = dst_type;
-    cpyDesc.dstDevice = (dst_type == CU_MEMORYTYPE_DEVICE)
-                            ? reinterpret_cast<CUdeviceptr>(dst_ptr)
-                            : 0;
-    cpyDesc.dstHost = (dst_type == CU_MEMORYTYPE_HOST) ? dst_ptr : nullptr;
     cpyDesc.dstPitch = dst_pitch;
-
+    cpyDesc.srcPitch = src_pitch;
     cpyDesc.WidthInBytes = width;
     cpyDesc.Height = height;
 
@@ -5573,7 +5426,7 @@ pi_result cuda_piextUSMGetMemAllocInfo(pi_context context, const void *ptr,
   pi_result result = PI_SUCCESS;
 
   try {
-    ScopedContext active(context->get()[0]);
+    ScopedContext active(context->get_devices()[0]->get_context());
     switch (param_name) {
     case PI_MEM_ALLOC_TYPE: {
       unsigned int value;
@@ -5661,6 +5514,19 @@ pi_result cuda_piextUSMGetMemAllocInfo(pi_context context, const void *ptr,
   return result;
 }
 
+__SYCL_EXPORT pi_result cuda_piextGetMemoryConnection(
+    pi_device device1, pi_context context1, pi_device device2,
+    pi_context context2, _pi_memory_connection *res) {
+  (void)device1;
+  (void)context1;
+  (void)device2;
+  (void)context2;
+
+  // We can always migrate memory between two devices using the CUDA APIs.
+  *res = PI_MEMORY_CONNECTION_MIGRATABLE;
+  return PI_SUCCESS;
+}
+
 pi_result cuda_piextEnqueueDeviceGlobalVariableWrite(
     pi_queue queue, pi_program program, const char *name,
     pi_bool blocking_write, size_t count, size_t offset, const void *src,
@@ -5683,9 +5549,11 @@ pi_result cuda_piextEnqueueDeviceGlobalVariableWrite(
   try {
     CUdeviceptr device_global = 0;
     size_t device_global_size = 0;
-    result = PI_CHECK_ERROR(
-        cuModuleGetGlobal(&device_global, &device_global_size,
-                          program->get()[0], device_global_name.c_str()));
+    result = PI_CHECK_ERROR(cuModuleGetGlobal(
+        &device_global, &device_global_size,
+        program
+            ->get()[program->get_context()->device_index(queue->get_device())],
+        device_global_name.c_str()));
 
     if (offset + count > device_global_size)
       return PI_ERROR_INVALID_VALUE;
@@ -5720,9 +5588,11 @@ pi_result cuda_piextEnqueueDeviceGlobalVariableRead(
   try {
     CUdeviceptr device_global = 0;
     size_t device_global_size = 0;
-    result = PI_CHECK_ERROR(
-        cuModuleGetGlobal(&device_global, &device_global_size,
-                          program->get()[0], device_global_name.c_str()));
+    result = PI_CHECK_ERROR(cuModuleGetGlobal(
+        &device_global, &device_global_size,
+        program
+            ->get()[program->get_context()->device_index(queue->get_device())],
+        device_global_name.c_str()));
 
     if (offset + count > device_global_size)
       return PI_ERROR_INVALID_VALUE;
@@ -5736,18 +5606,6 @@ pi_result cuda_piextEnqueueDeviceGlobalVariableRead(
   }
   return result;
 }
-__SYCL_EXPORT pi_result cuda_piextGetMemoryConnection(
-    pi_device device1, pi_context context1, pi_device device2,
-    pi_context context2, _pi_memory_connection *res) {
-  (void)device1;
-  (void)context1;
-  (void)device2;
-  (void)context2;
-
-  // We can always migrate memory between two devices using the CUDA APIs.
-  *res = PI_MEMORY_CONNECTION_MIGRATABLE;
-  return PI_SUCCESS;
-}
 
 // This API is called by Sycl RT to notify the end of the plugin lifetime.
 // TODO: add a global variable lifetime management code here (see
@@ -5760,7 +5618,7 @@ pi_result cuda_piTearDown(void *) {
 pi_result cuda_piGetDeviceAndHostTimer(pi_device Device, uint64_t *DeviceTime,
                                        uint64_t *HostTime) {
   _pi_event::native_type event;
-  ScopedContext active(Device);
+  ScopedContext active(Device->get_context());
 
   if (DeviceTime) {
     PI_CHECK_ERROR(cuEventCreate(&event, CU_EVENT_DEFAULT));
@@ -5776,11 +5634,7 @@ pi_result cuda_piGetDeviceAndHostTimer(pi_device Device, uint64_t *DeviceTime,
 
   if (DeviceTime) {
     PI_CHECK_ERROR(cuEventSynchronize(event));
-
-    float elapsedTime = 0.0f;
-    PI_CHECK_ERROR(
-        cuEventElapsedTime(&elapsedTime, _pi_platform::evBase_, event));
-    *DeviceTime = (uint64_t)(elapsedTime * (double)1e6);
+    *DeviceTime = Device->get_elapsed_time(event);
   }
 
   return PI_SUCCESS;
@@ -5949,5 +5803,3 @@ pi_result piPluginInit(pi_plugin *PluginInit) {
 }
 
 } // extern "C"
-
-CUevent _pi_platform::evBase_{nullptr};

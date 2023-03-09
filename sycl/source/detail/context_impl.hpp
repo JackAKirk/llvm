@@ -21,6 +21,7 @@
 
 #include <map>
 #include <memory>
+#include <optional>
 #include <set>
 
 namespace sycl {
@@ -210,6 +211,11 @@ public:
   initializeDeviceGlobals(pi::PiProgram NativePrg,
                           const std::shared_ptr<queue_impl> &QueueImpl);
 
+  /// Gets a program associated with a device global from the cache.
+  std::optional<RT::PiProgram>
+  getProgramForDeviceGlobal(const device &Device,
+                            DeviceGlobalMapEntry *DeviceGlobalEntry);
+
   enum PropertySupport { NotSupported = 0, Supported = 1, NotChecked = 2 };
 
 private:
@@ -224,6 +230,12 @@ private:
   mutable KernelProgramCache MKernelProgramCache;
   mutable PropertySupport MSupportBufferLocationByDevices;
 
+
+  friend pi_memory_connection
+  getMemoryConnection(const std::shared_ptr<device_impl> &Dev1,
+                      const std::shared_ptr<context_impl> &Ctx1,
+                      const std::shared_ptr<device_impl> &Dev2,
+                      const std::shared_ptr<context_impl> &Ctx2);
   std::set<const void *> MAssociatedDeviceGlobals;
   std::mutex MAssociatedDeviceGlobalsMutex;
 
@@ -262,11 +274,6 @@ private:
   std::map<std::pair<RT::PiProgram, RT::PiDevice>, DeviceGlobalInitializer>
       MDeviceGlobalInitializers;
   std::mutex MDeviceGlobalInitializersMutex;
-  friend pi_memory_connection
-  getMemoryConnection(const std::shared_ptr<device_impl> &Dev1,
-                      const std::shared_ptr<context_impl> &Ctx1,
-                      const std::shared_ptr<device_impl> &Dev2,
-                      const std::shared_ptr<context_impl> &Ctx2);
 };
 
 } // namespace detail

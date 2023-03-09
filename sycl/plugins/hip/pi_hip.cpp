@@ -5284,6 +5284,17 @@ pi_result hip_piextUSMGetMemAllocInfo(pi_context context, const void *ptr,
   return result;
 }
 
+__SYCL_EXPORT pi_result hip_piextGetMemoryConnection(
+    pi_device device1, pi_context context1, pi_device device2,
+    pi_context context2, _pi_memory_connection *res) {
+  (void)device1;
+  (void)context1;
+  (void)device2;
+  (void)context2;
+  *res = PI_MEMORY_CONNECTION_MIGRATABLE;
+  return PI_SUCCESS;
+}
+
 pi_result hip_piextEnqueueDeviceGlobalVariableWrite(
     pi_queue queue, pi_program program, const char *name,
     pi_bool blocking_write, size_t count, size_t offset, const void *src,
@@ -5324,16 +5335,6 @@ pi_result hip_piextEnqueueDeviceGlobalVariableRead(
       "hip_piextEnqueueDeviceGlobalVariableRead not implemented");
   return {};
 }
-__SYCL_EXPORT pi_result hip_piextGetMemoryConnection(
-    pi_device device1, pi_context context1, pi_device device2,
-    pi_context context2, _pi_memory_connection *res) {
-  (void)device1;
-  (void)context1;
-  (void)device2;
-  (void)context2;
-  *res = PI_MEMORY_CONNECTION_MIGRATABLE;
-  return PI_SUCCESS;
-}
 
 // This API is called by Sycl RT to notify the end of the plugin lifetime.
 // TODO: add a global variable lifetime management code here (see
@@ -5345,6 +5346,9 @@ pi_result hip_piTearDown(void *PluginParameter) {
 
 pi_result hip_piGetDeviceAndHostTimer(pi_device Device, uint64_t *DeviceTime,
                                       uint64_t *HostTime) {
+  if (!DeviceTime && !HostTime)
+    return PI_SUCCESS;
+
   _pi_event::native_type event;
 
   ScopedContext active(Device->get_context());
