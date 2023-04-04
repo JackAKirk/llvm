@@ -355,6 +355,7 @@ using IsRedux = sycl::detail::bool_constant<detail::is_integral<T>::value &&
                                detail::IsMaximum<T, BinaryOperation>::value)>;
 
 // ---- reduce_over_group
+//cluster_group
 template <typename T, class BinaryOperation, size_t cluster_size>
 detail::enable_if_t<(std::is_scalar<T>::value &&
                      IsRedux<T, BinaryOperation>::value &&
@@ -383,6 +384,90 @@ detail::enable_if_t<(std::is_scalar<V>::value && std::is_scalar<T>::value &&
                      detail::is_native_op<V, BinaryOperation>::value),
                     T>
 reduce_over_group(sycl::ext::oneapi::experimental::cluster_group<cluster_size, sycl::sub_group> cg, V x, T init,
+                  BinaryOperation binary_op) {
+  static_assert(
+      std::is_same<decltype(binary_op(init, x)), T>::value,
+      "Result type of binary_op must match reduction accumulation type.");
+#ifdef __SYCL_DEVICE_ONLY__
+  return binary_op(init, reduce_over_group(cg, x, binary_op));
+#else
+  //(void)cg;
+  throw runtime_error("Group algorithms are not supported on host device.",
+                      CL_INVALID_DEVICE);
+#endif
+}
+
+//ballot_group
+template <typename T, class BinaryOperation>
+detail::enable_if_t<(std::is_scalar<T>::value &&
+                     IsRedux<T, BinaryOperation>::value &&
+                     detail::is_native_op<T, BinaryOperation>::value),
+                    T>
+reduce_over_group(sycl::ext::oneapi::experimental::ballot_group<sycl::sub_group> cg, T x,
+                  BinaryOperation binary_op) {
+  static_assert(
+      std::is_same<decltype(binary_op(x, x)), T>::value,
+      "Result type of binary_op must match reduction accumulation type.");
+#ifdef __SYCL_DEVICE_ONLY__
+  uint32_t mask_bits;
+  cg.Mask.extract_bits(mask_bits);
+  return sycl::detail::calc<T, __spv::GroupOperation::Reduce,
+                            __spv::Scope::Subgroup>(
+      typename sycl::detail::GroupOpTag<T>::type(), x, binary_op, mask_bits);
+#else
+  throw runtime_error("Group algorithms are not supported on host device.",
+                      CL_INVALID_DEVICE);
+#endif
+}
+
+template <typename V, typename T, class BinaryOperation>
+detail::enable_if_t<(std::is_scalar<V>::value && std::is_scalar<T>::value &&
+                     IsRedux<T, BinaryOperation>::value &&
+                     detail::is_native_op<V, BinaryOperation>::value),
+                    T>
+reduce_over_group(sycl::ext::oneapi::experimental::ballot_group<sycl::sub_group> cg, V x, T init,
+                  BinaryOperation binary_op) {
+  static_assert(
+      std::is_same<decltype(binary_op(init, x)), T>::value,
+      "Result type of binary_op must match reduction accumulation type.");
+#ifdef __SYCL_DEVICE_ONLY__
+  return binary_op(init, reduce_over_group(cg, x, binary_op));
+#else
+  //(void)cg;
+  throw runtime_error("Group algorithms are not supported on host device.",
+                      CL_INVALID_DEVICE);
+#endif
+}
+
+//opportunistic_group
+template <typename T, class BinaryOperation>
+detail::enable_if_t<(std::is_scalar<T>::value &&
+                     IsRedux<T, BinaryOperation>::value &&
+                     detail::is_native_op<T, BinaryOperation>::value),
+                    T>
+reduce_over_group(sycl::ext::oneapi::experimental::opportunistic_group cg, T x,
+                  BinaryOperation binary_op) {
+  static_assert(
+      std::is_same<decltype(binary_op(x, x)), T>::value,
+      "Result type of binary_op must match reduction accumulation type.");
+#ifdef __SYCL_DEVICE_ONLY__
+  uint32_t mask_bits;
+  cg.Mask.extract_bits(mask_bits);
+  return sycl::detail::calc<T, __spv::GroupOperation::Reduce,
+                            __spv::Scope::Subgroup>(
+      typename sycl::detail::GroupOpTag<T>::type(), x, binary_op, mask_bits);
+#else
+  throw runtime_error("Group algorithms are not supported on host device.",
+                      CL_INVALID_DEVICE);
+#endif
+}
+
+template <typename V, typename T, class BinaryOperation>
+detail::enable_if_t<(std::is_scalar<V>::value && std::is_scalar<T>::value &&
+                     IsRedux<T, BinaryOperation>::value &&
+                     detail::is_native_op<V, BinaryOperation>::value),
+                    T>
+reduce_over_group(sycl::ext::oneapi::experimental::opportunistic_group cg, V x, T init,
                   BinaryOperation binary_op) {
   static_assert(
       std::is_same<decltype(binary_op(init, x)), T>::value,

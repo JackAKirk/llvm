@@ -29,7 +29,12 @@ public:
   using linear_id_type = typename ParentGroup::linear_id_type;
   static constexpr int dimensions = 1;
   static constexpr sycl::memory_scope fence_scope = ParentGroup::fence_scope;
-
+/*
+#if defined(__SYCL_DEVICE_ONLY__) && defined(__NVPTX__)
+ext::oneapi::sub_group_mask cuda_mask;
+ext::oneapi::sub_group_mask get_mask(){return cuda_mask;};
+#endif
+*/
   id_type get_group_id() const {
 #ifdef __SYCL_DEVICE_ONLY__
     return (Predicate) ? 1 : 0;
@@ -112,7 +117,7 @@ public:
 #endif
   }
 
-private:
+//private:
   sub_group_mask Mask;
   bool Predicate;
 
@@ -132,6 +137,9 @@ get_ballot_group(Group group, bool predicate) {
 #ifdef __SYCL_DEVICE_ONLY__
   // ballot_group partitions into two groups using the predicate
   // Membership mask for one group is negation of the other
+//#if defined(__NVPTX__)
+//__nvvm_vote_ballot_sync(mask, pred);
+
   sub_group_mask mask = sycl::ext::oneapi::group_ballot(group, predicate);
   if (predicate) {
     return ballot_group<sycl::sub_group>(mask, predicate);

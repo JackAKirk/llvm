@@ -897,6 +897,7 @@ foreach name = ["ControlBarrier"] in {
   // TODO: Allow enum flags instead of UInt ?
   // TODO: We should enforce that the UInt must be a literal.
   def : SPVBuiltin<name, [Void, UInt, UInt, UInt], Attr.Convergent>;
+  //def : SPVBuiltin<name # Masked, [Void, UInt, UInt, UInt, UInt], Attr.Convergent>;
 }
 
 foreach name = ["MemoryBarrier"] in {
