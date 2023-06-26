@@ -680,8 +680,11 @@ inline pi_result piDeviceRelease(pi_device Device) {
   return PI_SUCCESS;
 }
 
-inline pi_result piPluginGetLastError(char **message) {
-  return HANDLE_ERRORS(urGetLastResult(message));
+inline pi_result piPluginGetLastError(pi_platform Platform, char **message) {
+    ur_platform_handle_t UrPlatform =
+      reinterpret_cast<ur_platform_handle_t>(Platform);
+  HANDLE_ERRORS(urGetLastResult(UrPlatform, message));
+  return PI_SUCCESS;
 }
 
 inline pi_result piDeviceGetInfo(pi_device Device, pi_device_info ParamName,

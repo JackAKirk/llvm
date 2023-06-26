@@ -52,8 +52,8 @@ pi_result piextPlatformCreateWithNativeHandle(pi_native_handle NativeHandle,
   return pi2ur::piextPlatformCreateWithNativeHandle(NativeHandle, Platform);
 }
 
-pi_result piPluginGetLastError(char **message) {
-  return pi2ur::piPluginGetLastError(message);
+pi_result piPluginGetLastError(pi_platform Platform, char **message) {
+  return pi2ur::piPluginGetLastError(Platform, message);
 }
 
 // Returns plugin specific backend option.

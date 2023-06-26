@@ -2093,7 +2093,7 @@ __SYCL_EXPORT pi_result piTearDown(void *PluginParameter);
 /// error code indicates that plugin considers this to be a fatal error and the
 /// Returns the global timestamp from \param device , and syncronized host
 /// timestamp
-__SYCL_EXPORT pi_result piPluginGetLastError(char **message);
+__SYCL_EXPORT pi_result piPluginGetLastError(pi_platform Platform, char **message);
 
 /// API to get backend specific option.
 /// \param frontend_option is a string that contains frontend option.

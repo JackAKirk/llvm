@@ -117,7 +117,7 @@ public:
   void checkPiResult(RT::PiResult pi_result) const {
     char *message = nullptr;
     if (pi_result == PI_ERROR_PLUGIN_SPECIFIC_ERROR) {
-      pi_result = call_nocheck<PiApiKind::piPluginGetLastError>(&message);
+      pi_result = call_nocheck<PiApiKind::piPluginGetLastError>(PiPlatforms[0], &message);
 
       // If the warning level is greater then 2 emit the message
       if (detail::SYCLConfig<detail::SYCL_RT_WARNING_LEVEL>::get() >= 2)
@@ -134,7 +134,7 @@ public:
   template <sycl::errc errc> void checkPiResult(RT::PiResult pi_result) const {
     if (pi_result == PI_ERROR_PLUGIN_SPECIFIC_ERROR) {
       char *message = nullptr;
-      pi_result = call_nocheck<PiApiKind::piPluginGetLastError>(&message);
+      pi_result = call_nocheck<PiApiKind::piPluginGetLastError>(PiPlatforms[0], &message);
 
       // If the warning level is greater then 2 emit the message
       if (detail::SYCLConfig<detail::SYCL_RT_WARNING_LEVEL>::get() >= 2)
