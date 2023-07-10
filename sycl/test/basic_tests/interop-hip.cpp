@@ -7,6 +7,7 @@
 
 #include <sycl/sycl.hpp>
 #include <sycl/ext/oneapi/backend/hip.hpp>
+//#include <sycl/ext/oneapi/experimental/backend/hip.hpp>
 
 using namespace sycl;
 
@@ -40,7 +41,7 @@ int main() {
   // a SYCL object. See the relevant backend specification for details.
 
   backend_traits<backend::ext_oneapi_hip>::return_type<device> hip_device;
-  backend_traits<backend::ext_oneapi_hip>::return_type<context> hip_context;
+  //backend_traits<backend::ext_oneapi_hip>::return_type<context> hip_context;
   backend_traits<backend::ext_oneapi_hip>::return_type<event> hip_event;
   backend_traits<backend::ext_oneapi_hip>::return_type<queue> hip_queue;
 
@@ -52,9 +53,22 @@ int main() {
   // backend-defined and specified in the backend specification.
 
   hip_device = get_native<backend::ext_oneapi_hip>(Device);
-  hip_context = get_native<backend::ext_oneapi_hip>(Context);
-  hip_event = get_native<backend::ext_oneapi_hip>(Event);
+  //hip_context = get_native<backend::ext_oneapi_hip>(Context);
+  //hip_event = get_native<backend::ext_oneapi_hip>(Event);
   hip_queue = get_native<backend::ext_oneapi_hip>(Queue);
+
+
+  backend_input_t<backend::ext_oneapi_hip, device> InteropDeviceInput{
+      hip_device};
+  device InteropDevice =
+      make_device<backend::ext_oneapi_hip>(InteropDeviceInput);
+
+ /* backend_input_t<backend::ext_oneapi_hip, context> InteropContextInput{
+      cu_context[0]};
+  event InteropEvent = make_event<backend::ext_oneapi_hip>(cu_event, Context);
+
+  queue InteropQueue = make_queue<backend::ext_oneapi_hip>(cu_queue, Context);
+*///#endif
 
   return 0;
 }

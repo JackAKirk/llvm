@@ -23,10 +23,10 @@
 #include <sycl/queue.hpp>
 
 typedef int HIPdevice;
-typedef struct ihipCtx_t *HIPcontext;
-typedef struct ihipStream_t *HIPstream;
-typedef struct ihipEvent_t *HIPevent;
-typedef struct ihipModule_t *HIPmodule;
+typedef struct hipCtx_t *HIPcontext;
+typedef struct hipStream_t *HIPstream;
+typedef struct hipEvent_t *HIPevent;
+typedef struct hipModule_t *HIPmodule;
 typedef void *HIPdeviceptr;
 
 namespace sycl {
@@ -113,6 +113,18 @@ template <> struct BackendInput<backend::ext_oneapi_hip, queue> {
 
 template <> struct BackendReturn<backend::ext_oneapi_hip, queue> {
   using type = HIPstream;
+};
+
+template <> struct InteropFeatureSupportMap<backend::ext_oneapi_hip> {
+  static constexpr bool MakePlatform = false;
+  static constexpr bool MakeDevice = true;
+  static constexpr bool MakeContext = false;
+  static constexpr bool MakeQueue = true;
+  static constexpr bool MakeEvent = true;
+  static constexpr bool MakeBuffer = false;
+  static constexpr bool MakeKernel = false;
+  static constexpr bool MakeKernelBundle = false;
+  static constexpr bool MakeImage = false;
 };
 
 } // namespace detail

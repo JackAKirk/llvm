@@ -2062,6 +2062,53 @@ pi_result hip_piextDeviceGetNativeHandle(pi_device device,
 pi_result hip_piextDeviceCreateWithNativeHandle(pi_native_handle nativeHandle,
                                                 pi_platform platform,
                                                 pi_device *device) {
+
+
+   assert(device != nullptr);
+
+  hipDevice_t cu_device = static_cast<hipDevice_t>(nativeHandle);
+
+  auto is_device = [=](std::unique_ptr<_pi_device> &dev) {
+    return dev->get() == cu_device;
+  };
+
+  // If a platform is provided just check if the device is in it
+  if (platform) {
+    auto search_res = std::find_if(begin(platform->devices_),
+                                   end(platform->devices_), is_device);
+    if (search_res != end(platform->devices_)) {
+      *device = (*search_res).get();
+      return PI_SUCCESS;
+    }
+  }
+
+  // Get list of platforms
+  pi_uint32 num_platforms;
+  pi_result result = hip_piPlatformsGet(0, nullptr, &num_platforms);
+
+  if (result != PI_SUCCESS)
+    return result;
+
+  pi_platform *plat =
+      static_cast<pi_platform *>(malloc(num_platforms * sizeof(pi_platform)));
+  result = hip_piPlatformsGet(num_platforms, plat, nullptr);
+  if (result != PI_SUCCESS)
+    return result;
+
+  // Iterate through platforms to find device that matches nativeHandle
+  for (pi_uint32 j = 0; j < num_platforms; ++j) {
+    auto search_res = std::find_if(begin(plat[j]->devices_),
+                                   end(plat[j]->devices_), is_device);
+    if (search_res != end(plat[j]->devices_)) {
+      *device = (*search_res).get();
+      return PI_SUCCESS;
+    }
+  }
+
+  // If the provided nativeHandle cannot be matched to an
+  // existing device return error
+  return PI_ERROR_INVALID_OPERATION;
+
   (void)nativeHandle;
   (void)platform;
   (void)device;
