@@ -677,6 +677,10 @@ public:
                          stream_token);
   }
 
+    static pi_event make_with_native(pi_context context, hipEvent_t eventNative) {
+    return new _pi_event(context, eventNative);
+  }
+
   pi_result release();
 
   ~_pi_event();
@@ -686,6 +690,10 @@ private:
   // make_user static members in order to create a pi_event for HIP.
   _pi_event(pi_command_type type, pi_context context, pi_queue queue,
             hipStream_t stream, pi_uint32 stream_token);
+
+   // This constructor is private to force programmers to use the
+  // make_with_native for event introp
+  _pi_event(pi_context context, hipEvent_t eventNative);
 
   pi_command_type commandType_; // The type of command associated with event.
 

@@ -43,7 +43,7 @@ int main() {
   backend_traits<backend::ext_oneapi_hip>::return_type<device> hip_device;
   //backend_traits<backend::ext_oneapi_hip>::return_type<context> hip_context;
   backend_traits<backend::ext_oneapi_hip>::return_type<event> hip_event;
-  backend_traits<backend::ext_oneapi_hip>::return_type<queue> hip_queue;
+  //backend_traits<backend::ext_oneapi_hip>::return_type<queue> hip_queue;
 
   // 4.5.1.2 For each SYCL runtime class T which supports SYCL application
   // interoperability, a specialization of get_native must be defined, which
@@ -52,16 +52,21 @@ int main() {
   // application interoperability. The lifetime of the object returned are
   // backend-defined and specified in the backend specification.
 
-  hip_device = get_native<backend::ext_oneapi_hip>(Device);
+  //hip_device = get_native<backend::ext_oneapi_hip>(Device);
   //hip_context = get_native<backend::ext_oneapi_hip>(Context);
-  //hip_event = get_native<backend::ext_oneapi_hip>(Event);
-  hip_queue = get_native<backend::ext_oneapi_hip>(Queue);
+  hip_event = get_native<backend::ext_oneapi_hip>(Event);
+  auto hip_queue = get_native<backend::ext_oneapi_hip>(Queue);
 
 
-  backend_input_t<backend::ext_oneapi_hip, device> InteropDeviceInput{
+  /*backend_input_t<backend::ext_oneapi_hip, device> InteropDeviceInput{
       hip_device};
   device InteropDevice =
       make_device<backend::ext_oneapi_hip>(InteropDeviceInput);
+      */
+    //backend_input_t<backend::ext_oneapi_hip, queue> InteropQueueInput{
+      //hip_queue};
+      
+  //queue InteropQueue = make_queue<backend::ext_oneapi_hip>(hip_queue, Context);
 
  /* backend_input_t<backend::ext_oneapi_hip, context> InteropContextInput{
       cu_context[0]};
@@ -69,6 +74,8 @@ int main() {
 
   queue InteropQueue = make_queue<backend::ext_oneapi_hip>(cu_queue, Context);
 *///#endif
+
+  event InteropEvent = make_event<backend::ext_oneapi_cuda>(hip_event, Context);
 
   return 0;
 }

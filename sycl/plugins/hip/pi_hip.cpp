@@ -2108,13 +2108,13 @@ pi_result hip_piextDeviceCreateWithNativeHandle(pi_native_handle nativeHandle,
   // If the provided nativeHandle cannot be matched to an
   // existing device return error
   return PI_ERROR_INVALID_OPERATION;
-
+/*
   (void)nativeHandle;
   (void)platform;
   (void)device;
   sycl::detail::pi::die(
       "Creation of PI device from native handle not implemented");
-  return {};
+  return {};*/
 }
 
 /* Context APIs */
@@ -2644,7 +2644,7 @@ pi_result hip_piQueueCreate(pi_context context, pi_device device,
     queueImpl = std::unique_ptr<_pi_queue>(new _pi_queue{
         std::move(computeHipStreams), std::move(transferHipStreams), context,
         device, properties, flags});
-
+//does it not have this constructor in hip version?
     *queue = queueImpl.release();
 
     return PI_SUCCESS;
@@ -2813,6 +2813,46 @@ pi_result hip_piextQueueCreateWithNativeHandle(
     pi_native_handle nativeHandle, int32_t NativeHandleDesc, pi_context context,
     pi_device device, bool ownNativeHandle, pi_queue_properties *Properties,
     pi_queue *queue) {
+
+  /*(void)NativeHandleDesc;
+  (void)device;
+  (void)ownNativeHandle;
+  (void)Properties;
+  */
+  assert(ownNativeHandle == false);
+
+  unsigned int flags;
+  hipStream_t cuStream = reinterpret_cast<hipStream_t>(nativeHandle);
+
+  auto retErr = PI_CHECK_ERROR(hipStreamGetFlags(cuStream, &flags)); //todo check this!!
+
+  pi_queue_properties properties = 0;
+  if (flags == hipStreamDefault)
+    properties = __SYCL_PI_HIP_USE_DEFAULT_STREAM;
+  else if (flags == hipStreamNonBlocking)
+    properties = __SYCL_PI_HIP_SYNC_WITH_DEFAULT;
+  else
+    sycl::detail::pi::die("Unknown cuda stream");
+
+  std::vector<hipStream_t> computeHipStreams(1, cuStream);
+  std::vector<hipStream_t> transferHipStreams(0);
+
+  // Create queue and set num_compute_streams to 1, as computeCuStreams has
+  // valid stream
+    *queue = new _pi_queue{std::move(computeHipStreams),
+                         std::move(transferHipStreams),
+                         context,
+                         context->get_device(), //todo does this work same as in cuda?
+                         properties,
+                         flags}; //note removed last param from cuda version: check relates to .hpp changes?
+  (*queue)->num_compute_streams_ = 1;
+
+  return retErr;
+
+    /*  queueImpl = std::unique_ptr<_pi_queue>(new _pi_queue{
+        std::move(computeHipStreams), std::move(transferHipStreams), context,
+        device, properties, flags});*/
+  /*
   (void)nativeHandle;
   (void)NativeHandleDesc;
   (void)context;
@@ -2822,7 +2862,7 @@ pi_result hip_piextQueueCreateWithNativeHandle(
   (void)queue;
   sycl::detail::pi::die(
       "Creation of PI queue from native handle not implemented");
-  return {};
+  return {};*/
 }
 
 pi_result hip_piEnqueueMemBufferWrite(pi_queue command_queue, pi_mem buffer,
@@ -4212,6 +4252,16 @@ pi_result hip_piextEventCreateWithNativeHandle(pi_native_handle nativeHandle,
                                                pi_context context,
                                                bool ownNativeHandle,
                                                pi_event *event) {
+  //(void)ownNativeHandle;
+  //assert(!ownNativeHandle);
+
+  std::unique_ptr<_pi_event> event_ptr{nullptr};
+
+  *event = _pi_event::make_with_native(context,
+                                       reinterpret_cast<hipEvent_t>(nativeHandle)); //todo not static_cast?
+
+  return PI_SUCCESS;
+  /*
   (void)nativeHandle;
   (void)context;
   (void)ownNativeHandle;
@@ -4219,7 +4269,7 @@ pi_result hip_piextEventCreateWithNativeHandle(pi_native_handle nativeHandle,
 
   sycl::detail::pi::die(
       "Creation of PI event from native handle not implemented");
-  return {};
+  return {};*/
 }
 
 /// Creates a PI sampler object

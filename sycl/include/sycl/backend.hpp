@@ -267,8 +267,12 @@ std::enable_if_t<detail::InteropFeatureSupportMap<Backend>::MakeDevice == true,
                  device>
 make_device(const typename backend_traits<Backend>::template input_type<device>
                 &BackendObject) {
-  return detail::make_device(detail::pi::cast<pi_native_handle>(BackendObject),
+                  std::cout << "makedev" << std::endl;
+                  pi_native_handle NativeHandle = static_cast<pi_native_handle>(BackendObject);
+  return detail::make_device(NativeHandle,
                              Backend);
+  //return detail::make_device(detail::pi::cast<pi_native_handle>(BackendObject),
+              //               Backend);
 }
 
 template <backend Backend>

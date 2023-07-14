@@ -37,6 +37,8 @@ static const PluginPtr &getPlugin(backend Backend) {
     return pi::getPlugin<backend::ext_oneapi_level_zero>();
   case backend::ext_oneapi_cuda:
     return pi::getPlugin<backend::ext_oneapi_cuda>();
+  case backend::ext_oneapi_hip:
+    return pi::getPlugin<backend::ext_oneapi_hip>();
   default:
     throw sycl::exception(sycl::make_error_code(sycl::errc::runtime),
                           "getPlugin: Unsupported backend " +
@@ -79,8 +81,9 @@ platform make_platform(pi_native_handle NativeHandle, backend Backend) {
 
 __SYCL_EXPORT device make_device(pi_native_handle NativeHandle,
                                  backend Backend) {
+  std::cout << "reached_md" << std::endl;
   const auto &Plugin = getPlugin(Backend);
-
+std::cout << "reached_postgetPlugin" << std::endl;
   pi::PiDevice PiDevice = nullptr;
   Plugin->call<PiApiKind::piextDeviceCreateWithNativeHandle>(
       NativeHandle, nullptr, &PiDevice);

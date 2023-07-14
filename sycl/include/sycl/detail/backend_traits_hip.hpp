@@ -23,10 +23,10 @@
 #include <sycl/queue.hpp>
 
 typedef int HIPdevice;
-typedef struct hipCtx_t *HIPcontext;
-typedef struct hipStream_t *HIPstream;
-typedef struct hipEvent_t *HIPevent;
-typedef struct hipModule_t *HIPmodule;
+typedef struct ihipCtx_t *HIPcontext;
+typedef struct ihipStream_t *HIPstream;
+typedef struct ihipEvent_t *HIPevent;
+typedef struct ihipModule_t *HIPmodule;
 typedef void *HIPdeviceptr;
 
 namespace sycl {

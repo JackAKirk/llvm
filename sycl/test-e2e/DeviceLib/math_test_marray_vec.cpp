@@ -7,11 +7,16 @@
 
 // tests sycl floating point math functions for sycl::vec and sycl::marray float
 // and double cases.
-
+//#include <hip/hip_runtime.h>
 #include "math_test_marray_vec_common.hpp"
+#include <sycl/ext/oneapi/backend/hip.hpp>
 
 int main() {
-  queue deviceQueue;
+    //sycl::device sdev;// sdev(sycl::default_selector{});
+  //auto ocl_dev = sycl::get_native<sycl::backend::ext_oneapi_hip>(sdev);
+  hipDevice_t devhip;
+  sycl::device dev(sycl::make_device<sycl::backend::ext_oneapi_hip>(devhip));
+  queue deviceQueue(dev);
   math_tests_4<float4>(deviceQueue);
   math_tests_4<marray<float, 4>>(deviceQueue);
 
