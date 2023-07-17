@@ -4258,8 +4258,8 @@ pi_result hip_piextEventCreateWithNativeHandle(pi_native_handle nativeHandle,
                                                pi_context context,
                                                bool ownNativeHandle,
                                                pi_event *event) {
-  //(void)ownNativeHandle;
-  //assert(!ownNativeHandle); //why this wrong?
+  (void)ownNativeHandle;
+  assert(!ownNativeHandle); //why this wrong?
 
   std::unique_ptr<_pi_event> event_ptr{nullptr};
 

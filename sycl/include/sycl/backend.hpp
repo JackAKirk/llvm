@@ -307,6 +307,15 @@ make_event(const typename backend_traits<Backend>::template input_type<event>
                             TargetContext, Backend);
 }
 
+template <>
+inline event make_event<backend::ext_oneapi_hip>(
+    const backend_input_t<backend::ext_oneapi_hip, event> &BackendObject,
+    const context &TargetContext) {
+  return detail::make_event(detail::pi::cast<pi_native_handle>(BackendObject),
+                            TargetContext, true,
+                             backend::ext_oneapi_hip);
+}
+
 template <backend Backend>
 __SYCL_DEPRECATED("Use SYCL 2020 sycl::make_event free function")
 std::enable_if_t<detail::InteropFeatureSupportMap<Backend>::MakeEvent == true,
