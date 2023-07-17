@@ -411,10 +411,12 @@ struct _pi_queue {
   std::mutex transfer_stream_mutex_;
   std::mutex barrier_mutex_;
 
+  bool has_ownership_;
+
   _pi_queue(std::vector<native_type> &&compute_streams,
             std::vector<native_type> &&transfer_streams, _pi_context *context,
             _pi_device *device, pi_queue_properties properties,
-            unsigned int flags)
+            unsigned int flags, bool backend_owns = true)
       : compute_streams_{std::move(compute_streams)},
         transfer_streams_{std::move(transfer_streams)},
         delay_compute_(compute_streams_.size(), false),
@@ -603,6 +605,8 @@ struct _pi_queue {
   pi_uint32 get_reference_count() const noexcept { return refCount_; }
 
   pi_uint32 get_next_event_id() noexcept { return ++eventCount_; }
+
+  bool backend_has_ownership() const noexcept { return has_ownership_; }
 };
 
 typedef void (*pfn_notify)(pi_event event, pi_int32 eventCommandStatus,
@@ -657,6 +661,8 @@ public:
 
   pi_uint32 get_event_id() const noexcept { return eventId_; }
 
+  bool backend_has_ownership() const noexcept { return has_ownership_; }
+
   // Returns the counter time when the associated command(s) were enqueued
   //
   pi_uint64 get_queued_time() const;
@@ -698,6 +704,8 @@ private:
   pi_command_type commandType_; // The type of command associated with event.
 
   std::atomic_uint32_t refCount_; // Event reference count.
+
+  bool has_ownership_; // Signifies if event owns the native type.
 
   bool hasBeenWaitedOn_; // Signifies whether the event has been waited
                          // on through a call to wait(), which implies

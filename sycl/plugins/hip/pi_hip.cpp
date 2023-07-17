@@ -547,7 +547,7 @@ hipStream_t _pi_queue::get_next_transfer_stream() {
 
 _pi_event::_pi_event(pi_command_type type, pi_context context, pi_queue queue,
                      hipStream_t stream, pi_uint32 stream_token)
-    : commandType_{type}, refCount_{1}, hasBeenWaitedOn_{false},
+    : commandType_{type}, refCount_{1}, has_ownership_{true},  hasBeenWaitedOn_{false},
       isRecorded_{false}, isStarted_{false}, streamToken_{stream_token},
       evEnd_{nullptr}, evStart_{nullptr}, evQueued_{nullptr}, queue_{queue},
       stream_{stream}, context_{context} {
@@ -567,6 +567,15 @@ _pi_event::_pi_event(pi_command_type type, pi_context context, pi_queue queue,
   if (queue_ != nullptr) {
     hip_piQueueRetain(queue_);
   }
+  hip_piContextRetain(context_);
+}
+
+_pi_event::_pi_event(pi_context context, hipEvent_t eventNative)
+    : commandType_{PI_COMMAND_TYPE_USER}, refCount_{1}, has_ownership_{false},
+      hasBeenWaitedOn_{false}, isRecorded_{false}, isStarted_{false},
+      streamToken_{std::numeric_limits<pi_uint32>::max()}, evEnd_{eventNative},
+      evStart_{nullptr}, evQueued_{nullptr}, queue_{nullptr}, stream_{nullptr},
+      context_{context} {
   hip_piContextRetain(context_);
 }
 
@@ -696,6 +705,8 @@ pi_result _pi_event::wait() {
 }
 
 pi_result _pi_event::release() {
+   if (!backend_has_ownership())
+    return PI_SUCCESS;
   assert(queue_ != nullptr);
   PI_CHECK_ERROR(hipEventDestroy(evEnd_));
 
@@ -2730,7 +2741,8 @@ pi_result hip_piQueueRelease(pi_queue command_queue) {
 
   try {
     std::unique_ptr<_pi_queue> queueImpl(command_queue);
-
+    if (!command_queue->backend_has_ownership())
+      return PI_SUCCESS;
     ScopedContext active(command_queue->get_context());
 
     command_queue->for_each_stream([](hipStream_t s) {
@@ -2819,7 +2831,7 @@ pi_result hip_piextQueueCreateWithNativeHandle(
   (void)ownNativeHandle;
   (void)Properties;
   */
-  assert(ownNativeHandle == false);
+  //assert(ownNativeHandle == false); //marked true by call??
 
   unsigned int flags;
   hipStream_t cuStream = reinterpret_cast<hipStream_t>(nativeHandle);
@@ -2844,7 +2856,7 @@ pi_result hip_piextQueueCreateWithNativeHandle(
                          context,
                          context->get_device(), //todo does this work same as in cuda?
                          properties,
-                         flags}; //note removed last param from cuda version: check relates to .hpp changes?
+                         flags, false}; //note removed last param from cuda version: check relates to .hpp changes?
   (*queue)->num_compute_streams_ = 1;
 
   return retErr;
@@ -4005,12 +4017,6 @@ pi_result hip_piextKernelSetArgPointer(pi_kernel kernel, pi_uint32 arg_index,
 //
 // Events
 //
-pi_result hip_piEventCreate(pi_context context, pi_event *event) {
-  (void)context;
-  (void)event;
-
-  sycl::detail::pi::die("PI Event Create not implemented in HIP backend");
-}
 
 pi_result hip_piEventGetInfo(pi_event event, pi_event_info param_name,
                              size_t param_value_size, void *param_value,
@@ -4253,7 +4259,7 @@ pi_result hip_piextEventCreateWithNativeHandle(pi_native_handle nativeHandle,
                                                bool ownNativeHandle,
                                                pi_event *event) {
   //(void)ownNativeHandle;
-  //assert(!ownNativeHandle);
+  //assert(!ownNativeHandle); //why this wrong?
 
   std::unique_ptr<_pi_event> event_ptr{nullptr};
 
@@ -4270,6 +4276,29 @@ pi_result hip_piextEventCreateWithNativeHandle(pi_native_handle nativeHandle,
   sycl::detail::pi::die(
       "Creation of PI event from native handle not implemented");
   return {};*/
+}
+
+pi_result hip_piEventCreate(pi_context context, pi_event *event) {
+ //ur_context_handle_t UrContext =
+   //   reinterpret_cast<ur_context_handle_t>(Context);
+
+  //ur_event_handle_t *UrEvent = reinterpret_cast<ur_event_handle_t *>(RetEvent);
+  // pass null for the hNativeHandle to use urEventCreateWithNativeHandle
+  // as urEventCreate
+  //ur_event_native_properties_t Properties{};
+  pi_native_handle nativeHandle;
+  return hip_piextEventCreateWithNativeHandle(nativeHandle,
+                                               context,
+                                               false,//or true?
+                                               event);
+  //HANDLE_ERRORS(
+    //  urEventCreateWithNativeHandle(nullptr, UrContext, &Properties, UrEvent));
+
+  //return PI_SUCCESS;
+ /* (void)context;
+  (void)event;
+
+  sycl::detail::pi::die("PI Event Create not implemented in HIP backend");*/
 }
 
 /// Creates a PI sampler object
