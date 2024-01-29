@@ -63,7 +63,7 @@ if(SYCL_PI_UR_USE_FETCH_CONTENT)
   # Date:   Wed Jan 24 11:48:06 2024 +0000
   #     Merge pull request #1070 from pasaulais/pa/dlopen-cupti
   #     [CUDA] Dynamically load the CUPTI library when tracing
-  set(UNIFIED_RUNTIME_TAG 5b3750d6d7edc46a8d3956e370d17ffaacad0d6e)
+  set(UNIFIED_RUNTIME_TAG d0e7f0e90e934e8c2d87f3f48e1d9b009b821827)
 
   if(SYCL_PI_UR_OVERRIDE_FETCH_CONTENT_REPO)
     set(UNIFIED_RUNTIME_REPO "${SYCL_PI_UR_OVERRIDE_FETCH_CONTENT_REPO}")
