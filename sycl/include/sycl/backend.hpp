@@ -200,7 +200,6 @@ get_native<backend::opencl, event>(const event &Obj) {
 }
 #endif
 
-#if SYCL_EXT_ONEAPI_BACKEND_CUDA
 template <>
 inline backend_return_t<backend::ext_oneapi_cuda, device>
 get_native<backend::ext_oneapi_cuda, device>(const device &Obj) {
@@ -230,7 +229,6 @@ inline backend_return_t<backend::ext_oneapi_cuda, context> get_native<
 }
 
 #endif // SYCL_EXT_ONEAPI_BACKEND_CUDA_EXPERIMENTAL
-#endif // SYCL_EXT_ONEAPI_BACKEND_CUDA
 
 #if SYCL_EXT_ONEAPI_BACKEND_HIP
 
